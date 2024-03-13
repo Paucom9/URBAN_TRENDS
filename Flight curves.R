@@ -87,6 +87,9 @@ setnames(m_count, c('transect_id', 'visit_date','species_name', 'count'),
 setnames(m_clim, c('transect_id', 'genzname'),
          c('SITE_ID', 'RCLIM'))
 
+# Perform a left join to add RCLIM from m_clim to m_visit based on bms_id and SITE_ID
+m_visit <- m_visit[m_clim, on = .(bms_id, SITE_ID), nomatch = 0]
+
 ## Perform a left join to merge m_clim into m_count
 
 m_count <- left_join(m_count, m_clim, by = c("SITE_ID", "bms_id"))
@@ -130,22 +133,13 @@ months_selection <- quantile_weeks %>%
 
 # --- Flight curves and SINDEX calculation ---
 
-# Iterate over each unique bms_id in the monitoring count data
-for(id in unique(m_count$bms_id)){
-  
-  # Filter monitoring count data for the current bms_id
-  bms_data <- m_count %>% filter(.data$bms_id == id)
-  
-  # Inform about the processing status
-  cat(sprintf("Processing bms_id %s: found %d unique species\n", id, length(unique(bms_data$SPECIES))))
-  
-  # Select start and end months for butterfly monitoring for the current bms_id
+  # Select start and end months for butterfly monitoring for the current climate region
   filt_months_selection <- months_selection %>% filter(bms_id == id)
   StartMonth <- filt_months_selection$month_start[1]
   EndMonth <- filt_months_selection$month_end[1]
   
-  # Identify unique climate regions for the current bms_id to analyze region-specific trends
-  unique_regions <- unique(na.omit(bms_data$RCLIM))
+  # Identify unique climate regions 
+  unique_regions <- unique(na.omit(m_count$RCLIM))
   unique_regions <- setdiff(unique_regions, "") # Remove empty string levels, if any
   
   # Initialize storage for results across all regions
@@ -154,12 +148,21 @@ for(id in unique(m_count$bms_id)){
   
   # Analyze data for each climate region
   for(region in unique_regions){
+    
+    cat(sprintf("Processing region %d/%d: %s\n", region_counter, length(unique_regions), region))
+    
     # Filter data for the current region
-    region_data <- bms_data %>% filter(RCLIM == region)
+    region_data <- m_count %>% filter(RCLIM == region)
+    
+    # Since we're not looping over bms_id, define a generic or common period for analysis.
+    # This requires adjusting the selection of StartMonth and EndMonth
+    # If these months vary by region or another variable, adjust this section accordingly.
+    # For demonstration, assuming fixed months or retrieving from a different logic:
+    StartMonth <- 4 # Example, April
+    EndMonth <- 9 # Example, September
     
     # Extract unique species within the region for analysis
     unique_species <- unique(region_data$SPECIES)
-    cat(sprintf("Processing region %d/%d: %s\n", region_counter, length(unique_regions), region))
     
     # Initialize species counter
     species_counter <- 1
@@ -227,5 +230,5 @@ for(id in unique(m_count$bms_id)){
   # Combine and save final results for the current bms_id
   final_results_bms_id <- rbindlist(all_results, use.names = TRUE, fill = TRUE)
   write.csv(final_results_bms_id, sprintf("final_results_%s.csv", bms_id))
-}
+
 
