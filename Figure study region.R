@@ -22,7 +22,6 @@ rclim_cord_sf <- st_as_sf(rclim_cord, coords = c("transect_lon", "transect_lat")
 
 # Get European country boundaries
 world <- ne_countries(scale = "medium", returnclass = "sf")
-europe <- subset(world, continent == "Europe")
 
 marked_cold_to_warm_palette <- c(
   "#5e4fa2", # Deep indigo, cold
@@ -50,7 +49,7 @@ points_transformed <- st_transform(points_sf, crs = 3035)
 xlims_transformed <- st_coordinates(points_transformed)[,1]
 
 #Plot the map
-ggplot() +
+plot <-ggplot() +
   geom_sf(data = world, fill = "lightgrey", color = "white") + # Draw countries
   geom_sf(data = rclim_cord_sf, aes(color = RCLIM), size = 2) + # Draw transect points
   scale_color_manual(values = marked_cold_to_warm_palette) + # Use the custom palette
@@ -58,3 +57,4 @@ ggplot() +
   labs(color = "Climate regions") +
   coord_sf(crs = st_crs(3035), xlim = xlims_transformed, ylim = c(1000000, 5100000))
 
+regions

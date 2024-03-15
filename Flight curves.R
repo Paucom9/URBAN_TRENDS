@@ -2,7 +2,7 @@
 
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
-setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  # Set the working directory to where your data files are located
+setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
 # Load required libraries
 library(data.table)  # For efficient data handling
@@ -14,6 +14,7 @@ library(foreach)     # For looping constructs
 library(broom)       # For converting statistical analysis objects into tidy data frames
 library(stringr)     # For string manipulation
 library(lubridate)   # For easy and intuitive work with dates and times
+library(suncalc)
 
 
 # Data Import and Preparation
@@ -97,72 +98,116 @@ m_count <- left_join(m_count, m_clim, by = c("SITE_ID", "bms_id"))
 #NA values in RCLIM correspond to uBMS transects. All of them are part of climate region K
 m_count$RCLIM <- replace(m_count$RCLIM, is.na(m_count$RCLIM), "K. Warm temperate and mesic")
 
+# --- Establishing photoperiod-based geographic region --- #
 
-# --- Selection of start and end months for butterfly monitoring based on visit data ---
+# Function to calculate day length based on latitude and date
+calculate_day_length <- function(lat, date) {
+  sun_times <- getSunlightTimes(date, lat, 0)  # Longitude 0, adjust as needed
+  day_length <- as.numeric(difftime(sun_times$sunset, sun_times$sunrise, units = "hours"))
+  return(day_length)
+}
 
-# Group visits by week and butterfly monitoring scheme ID (bms_id), then count visits per week
-weekly_visits <- m_visit %>%
-  group_by(bms_id, week) %>%
-  summarise(total_visit = n(), .groups = 'drop') # Count the number of visits for each bms_id and week
+min_latitude <- 28.07431
+max_latitude <- 67.47644
+date <- as.Date("2024-06-20") # summer solstice in 2024
+current_latitude <- min_latitude
+start_latitude <- current_latitude
+initial_day_length <- calculate_day_length(start_latitude, date)
 
-# Calculate quantiles to identify the active monitoring season for each bms_id
-quantile_weeks <- weekly_visits %>%
-  group_by(bms_id) %>%
-  mutate(
-    cumulative_visit = cumsum(total_visit), # Cumulative sum of visits to identify the distribution over weeks
-    total_year_visit = max(cumulative_visit) # Total visits for the year to calculate quantiles
-  ) %>%
-  mutate(
-    p5_week = total_year_visit * 0.05, # 5th percentile of visits
-    p95_week = total_year_visit * 0.95  # 95th percentile of visits
-  ) %>%
-  summarize(
-    week_5th_percentile = week[min(which(cumulative_visit >= p5_week))], # Week reaching the 5th percentile
-    week_95th_percentile = week[min(which(cumulative_visit >= p95_week))] # Week reaching the 95th percentile
-  ) %>%
-  ungroup()
+regions <- data.frame(start_latitude = numeric(), end_latitude = numeric(), day_length_diff = numeric())
 
-# Convert week percentiles to months to define the monitoring season
-months_selection <- quantile_weeks %>%
-  mutate(
-    month_start = ceiling(week_5th_percentile / 4.348), # Convert start week to month, assuming ~4.348 weeks/month
-    month_start = ifelse(month_start > 12, 12, month_start), # Ensure month_start doesn't exceed December
-    month_end = ceiling(week_95th_percentile / 4.348), # Convert end week to month
-    month_end = ifelse(month_end > 12, 12, month_end) # Ensure month_end doesn't exceed December
-  )
-
-# --- Flight curves and SINDEX calculation ---
-
-  # Select start and end months for butterfly monitoring for the current climate region
-  filt_months_selection <- months_selection %>% filter(bms_id == id)
-  StartMonth <- filt_months_selection$month_start[1]
-  EndMonth <- filt_months_selection$month_end[1]
+while(current_latitude <= max_latitude) {
+  current_day_length <- calculate_day_length(current_latitude, date)
   
-  # Identify unique climate regions 
-  unique_regions <- unique(na.omit(m_count$RCLIM))
-  unique_regions <- setdiff(unique_regions, "") # Remove empty string levels, if any
+  if(!is.na(current_day_length) && (abs(current_day_length - initial_day_length) >= 1 || current_latitude == max_latitude)) {
+    regions <- rbind(regions, data.frame(start_latitude = start_latitude, end_latitude = current_latitude, day_length_diff = abs(current_day_length - initial_day_length)))
+    
+    start_latitude <- current_latitude
+    initial_day_length <- current_day_length
+  }
+  
+  current_latitude <- current_latitude + 0.1  # Adjust the step size as needed for precision vs. performance
+}
+
+regions$name_region <- paste0("R", seq_along(regions$start_latitude))
+
+#Convert transect_lat from EPSG:3035 to latitude in EPSG:4326
+
+# Remove rows with missing coordinates
+m_coord_clean <- m_coord %>%
+  filter(!is.na(transect_lon) & !is.na(transect_lat))
+
+# Convert the cleaned data frame to an sf object
+m_coord_sf <- st_as_sf(m_coord_clean, coords = c("transect_lon", "transect_lat"), crs = 3035)
+
+# Transform the projection to EPSG:4326 to get geographic coordinates
+m_coord_sf_transformed <- st_transform(m_coord_sf, crs = 4326)
+
+# Extract the latitude and longitude from the geometry column of the transformed sf object
+lat_lon <- st_coordinates(m_coord_sf_transformed)
+
+# Add these coordinates back to the cleaned data frame
+m_coord_clean$transect_lat_geo <- lat_lon[, 2] # Latitude
+m_coord_clean$transect_lon_geo <- lat_lon[, 1] # Longitude
+
+
+#Assigning geo_region to m_coord based on latitude range
+
+# A function to find the corresponding region based on latitude
+find_region <- function(lat) {
+  region <- regions$name_region[lat >= regions$start_latitude & lat <= regions$end_latitude]
+  if (length(region) == 0) return(NA)
+  return(region)
+}
+
+# Apply the function to each row in m_coord to create the geo_region column
+m_coord_clean$geo_region <- sapply(m_coord_clean$transect_lat_geo, find_region)
+
+# Joining m_count with m_coord_clean to include geo_region based on bms_id and the corresponding site/transect ID
+m_count <- m_count %>%
+  left_join(m_coord_clean %>% dplyr::select(bms_id, transect_id, geo_region), 
+            by = c("bms_id" = "bms_id", "SITE_ID" = "transect_id"))
+
+# Joining m_visit with m_coord_clean to include geo_region based on bms_id and the corresponding site/transect ID
+m_visit <- m_visit %>%
+  left_join(m_coord_clean %>% dplyr::select(bms_id, transect_id, geo_region), 
+            by = c("bms_id" = "bms_id", "SITE_ID" = "transect_id"))
+
+
+# --- Flight curves and SINDEX calculation --- #
+
+# Iterate over each unique geographic region in the monitoring count data
+for(region in unique(m_count$geo_region)){
+  
+  # Filter monitoring count and visit data for the current latitudinal geographic region
+  geocount_data <- m_count %>% filter(.data$geo_region == region)
+  geovisit_data <- m_visit %>% filter(.data$geo_region == region)
+  
+  # Inform about the processing status
+  cat(sprintf("Processing latitudinal region %s: found %d unique species\n", region, length(unique(geocount_data$SPECIES))))
+  
+  # Identify unique climate regions for the current rclim to analyze region-specific trends
+  unique_rclim <- unique(na.omit(geocount_data$RCLIM))
+  unique_rclim <- setdiff(unique_rclim, "") # Remove empty string levels, if any
   
   # Initialize storage for results across all regions
   all_results <- list()
   region_counter <- 1 # Track processed regions
   
   # Analyze data for each climate region
-  for(region in unique_regions){
-    
-    cat(sprintf("Processing region %d/%d: %s\n", region_counter, length(unique_regions), region))
-    
+  for(rclim in unique_rclim){
     # Filter data for the current region
-    region_data <- m_count %>% filter(RCLIM == region)
+    rclimcount_data <- geocount_data %>% filter(RCLIM == rclim)
+    rclimvisit_data <- geovisit_data %>% filter(RCLIM == rclim)
     
-    # Since we're not looping over bms_id, define a generic or common period for analysis.
-    # This requires adjusting the selection of StartMonth and EndMonth
-    # If these months vary by region or another variable, adjust this section accordingly.
-    # For demonstration, assuming fixed months or retrieving from a different logic:
-    StartMonth <- 4 # Example, April
-    EndMonth <- 9 # Example, September
+    #Function to calculate start and end months for monitoring season
+    months_selection<- calculate_monitoring_season(rclimvisit_data)
+    StartMonth <- months_selection$month_start 
+    EndMonth <- months_selection$month_end 
     
     # Extract unique species within the region for analysis
-    unique_species <- unique(region_data$SPECIES)
+    unique_species <- unique(rclimcount_data$SPECIES)
+    cat(sprintf("Processing climate region %d/%d: %s\n", region_counter, length(unique_rclim), rclim))
     
     # Initialize species counter
     species_counter <- 1
@@ -179,7 +224,7 @@ months_selection <- quantile_weeks %>%
     results <- tryCatch({
       foreach(species = unique_species, .combine = 'rbind', .packages = c("rbms", "data.table")) %do% {
         # Subset data for the current species in the current region
-        current_species_data <- region_data[SPECIES == species]
+        current_species_data <- rclimcount_data[SPECIES == species]
         
         # Output the species being processed
         cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
@@ -215,7 +260,7 @@ months_selection <- quantile_weeks %>%
         sindex <- rbms::site_index(butterfly_count = impt_counts, MinFC = 0.10)
         
         # Ensure the species and region names are included in the results
-        impt_counts[, `:=`(SPECIES = species, RCLIM = region)]
+        impt_counts[, `:=`(SPECIES = species, RCLIM = rclim)]
       }
     }, error = function(e) {
       cat("Error in parallel processing:", e$message, "\n")
@@ -227,8 +272,9 @@ months_selection <- quantile_weeks %>%
     region_counter <- region_counter + 1 # Move to the next region
   }
   
-  # Combine and save final results for the current bms_id
-  final_results_bms_id <- rbindlist(all_results, use.names = TRUE, fill = TRUE)
+  # Combine and save final results for the current rclim
+  final_results_rclim <- rbindlist(all_results, use.names = TRUE, fill = TRUE)
   write.csv(final_results_bms_id, sprintf("final_results_%s.csv", bms_id))
+}
 
 
