@@ -187,3 +187,11 @@ calculate_day_length <- function(lat, date) {
   return(day_length)
 }
 
+
+# --- Function to find the corresponding latitudinal geographic region based on transect latitude --- #
+find_region <- function(lat) {
+  region <- regions$name_region[lat >= regions$start_latitude & lat <= regions$end_latitude]
+  if (length(region) == 0) return(NA)
+  return(region)
+}
+

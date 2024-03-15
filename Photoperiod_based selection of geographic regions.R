@@ -155,7 +155,6 @@ current_latitude <- min_latitude
 start_latitude <- current_latitude
 initial_day_length <- day_length_ymin
 
-
 while(current_latitude <= max_latitude + 0.01) {  # Allow the loop to run one last time if we're just past the max
   # Calculate the current day length or set to NA if the sun doesn't set
   current_day_length <- calculate_day_length(current_latitude, date)
