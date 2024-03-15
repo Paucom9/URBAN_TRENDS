@@ -15,7 +15,7 @@ library(broom)       # For converting statistical analysis objects into tidy dat
 library(stringr)     # For string manipulation
 library(lubridate)   # For easy and intuitive work with dates and times
 library(suncalc)
-
+library(sf)
 
 # Data Import and Preparation
 
@@ -38,17 +38,14 @@ ebms_clim_df <- ebms_clim_df %>%
 # uBMS data
 # Import count data
 ubms_count_df <- read.csv("output_count_table.csv", sep = ",", dec = ".")
-
 # Assign a unique identifier to uBMS data
 ubms_count_df$bms_id <- "ES_uBMS"
-
 # Select and reorder columns to match the structure of eBMS count data
 ubms_count_df <- ubms_count_df %>%
   dplyr::select(visit_id, bms_id, transect_id, visit_date, year, month, day, species_name, count)
 
 # Import visit data and perform necessary transformations
 ubms_visit_df <- read.csv("raw_ubms_ebms_visit.csv", sep = ",", dec = ".")
-
 ubms_visit_df$bms_id <- "ES_uBMS"  # Assign the uBMS identifier
 
 # Rename columns and calculate date components
@@ -67,12 +64,36 @@ ubms_visit_df <- ubms_visit_df %>%
 ubms_visit_df <- ubms_visit_df %>%
   dplyr::select(visit_id, bms_id, transect_id, visit_date, year, month, day, ebms_partner, week)
 
+# Import transect cooordinates
+ubms_coord <- read.csv("ubms_sites.csv", sep = ";", dec = ".")
+
+ubms_coord <- ubms_coord %>%mutate(bms_id = "ES_uBMS")
+
+# Filter out rows with NA in coordinates before transformation
+ubms_coord_filtered <- ubms_coord %>%
+  filter(!is.na(transect_longitude) & !is.na(transect_latitude))
+
+# Convert to an sf object
+ubms_coord_sf <- st_as_sf(ubms_coord_filtered, coords = c("transect_longitude", "transect_latitude"), crs = 4326, remove = FALSE)
+
+# Transform coordinates to EPSG:3035
+ubms_coord_transformed <- st_transform(ubms_coord_sf, crs = 3035)
+
+ubms_coord_final <- data.frame(ubms_coord_transformed) %>%
+  transmute(
+    bms_id,
+    transect_id,
+    transect_length,
+    transect_lon = st_coordinates(ubms_coord_transformed)[, 1],
+    transect_lat = st_coordinates(ubms_coord_transformed)[, 2]
+  )
+
 ## Concatenate rows
 
 m_count_df <- rbind(ebms_count_df, ubms_count_df)
 m_visit_df<- rbind(ebms_visit_df, ubms_visit_df)
 m_clim_df<- ebms_clim_df
-m_coord<- ebms_coord_df
+m_coord<- rbind(ebms_coord_df, ubms_coord_final)
 
 ## Transform data frames to data tables
 
@@ -131,7 +152,12 @@ while(current_latitude <= max_latitude) {
 
 regions$name_region <- paste0("R", seq_along(regions$start_latitude))
 
-#Convert transect_lat from EPSG:3035 to latitude in EPSG:4326
+#
+
+
+
+
+
 
 # Remove rows with missing coordinates
 m_coord_clean <- m_coord %>%
