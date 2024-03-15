@@ -173,3 +173,17 @@ calculate_monitoring_season <- function(data) {
 #make sure your data frame includes 'week' and 'bms_id' columns.
 
 
+# --- Function to calculate day length based on latitude and date --- #
+
+library(suncalc)
+
+calculate_day_length <- function(lat, date) {
+  sun_times <- getSunlightTimes(date, lat, 0)  # Longitude 0, adjust as needed
+  if (is.na(sun_times$sunset) || is.na(sun_times$sunrise)) {
+    # Handle the NA values, perhaps by setting to 0 or 24 depending on the context
+    return(NA)  # or an appropriate value for your use case
+  }
+  day_length <- as.numeric(difftime(sun_times$sunset, sun_times$sunrise, units = "hours"))
+  return(day_length)
+}
+
