@@ -1,87 +1,116 @@
 # --- rank_sites function to spatially stratify and select the most informative transects for the regional GAM --- #
 
-# Required libraries
-library(data.table)
-library(sf)
-library(raster)
+#Function description: 300 top sites are selected based on a composite criterion that incorporates visitation frequency and species occurrence, spatial distribution, temporal significance, 
+#and an aggregate ranking across these dimensions. This multifaceted approach ensures that the sites chosen as "top" reflect a balanced consideration of their activity levels, 
+#geographical importance, and relevance over years.
 
-# Define the rank_sites function to rank and select top sites based on visit counts and spatial distribution
-rank_sites <- function(subcount, m_visit, m_coord, country_code) {
+#Required libraries
+library(sf)
+library(rnaturalearth)
+library(data.table)
+
+rank_sites <- function(subcount, m_visit, m_cord) {
+  
   # Check for sites exceeding the threshold and proceed only if necessary
   if (n_distinct(subcount$SITE_ID) <= 300) {
     cat("There are 300 or fewer unique SITE_IDs in subcount. No additional processing needed.\n")
     return(subcount)
   }
   
-  # Aggregate visit counts by site and year for subcount and m_visit data
-  subcount_n <- subcount[, .N, by = .(SITE_ID, year)]
-  m_visit_n <- m_visit[, .N, by = .(SITE_ID, year)]
+  subcount_n<- subcount[, .N, by =.(SITE_ID, year)]
+  m_visit_n<- m_visit[, .N, by =.(SITE_ID, year)]
   
-  # Combine counts with visit data for each site and year
-  combined_data <- merge(subcount_n, m_visit_n, by = c("SITE_ID", "year"), all.x = TRUE)
-  # Rename the columns for clarity
-  setnames(combined_data, c("N.x", "N.y"), c("Ncount", "Nvisit"))
+  subcount_visit_n<- merge(subcount_n, m_visit_n , by= c("SITE_ID","year"), all.x = TRUE)
   
-  # Order the data by visit and count numbers (descending)
-  combined_data <- combined_data[order(-Nvisit, -Ncount),]
+  setnames(subcount_visit_n, c("N.x", "N.y"), c("Ncount", "Nvisit"))
   
-  # Merge the ordered data with coordinates
-  combined_data <- merge(combined_data, m_coord, by.x = "SITE_ID", by.y = "transect_id", all.x = TRUE)
   
-  # Convert merged data to a spatial data frame, ensuring valid longitude values
-  sites_sf <- st_as_sf(combined_data[!is.na(combined_data$transect_lon), ], 
-                       coords = c("transect_lon", "transect_lat"), crs = 3035)
+  subcount_visit_n<-subcount_visit_n[order(-Nvisit, -Ncount),]
   
-  # Fetch and transform the country map to the same CRS as site data
-  country_map <- st_transform(st_as_sf(getData(name = "GADM", country = country_code, level = 0)), 
-                              crs = st_crs(sites_sf))
   
-  # Generate a grid overlay for the country map
-  country_grid <- st_as_sf(st_make_grid(st_bbox(country_map), cellsize = 100000, square = TRUE, what = "polygons"))
-  intersects_grid <- as.numeric(st_intersects(country_grid, country_map))
-  country_grid_filtered <- country_grid[intersects_grid == 1,]
-  country_grid_filtered$gid <- 1:nrow(country_grid_filtered)
+  subcount_visit_n<- merge(subcount_visit_n, m_cord, by.x = "SITE_ID", by.y = "transect_id", all.x = TRUE)
   
-  # Assign a grid ID to each site based on spatial intersection
-  sites_sf$gid <- as.numeric(st_intersects(sites_sf, country_grid_filtered))
+  subcount_visit_n_sf <- st_as_sf(subcount_visit_n[!is.na(subcount_visit_n$transect_lon), ], coords = c("transect_lon", "transect_lat"), crs = 3035)
   
-  # Convert the spatial data frame back to a data table and reorder by visit count, count number, and grid ID
-  sites_dt <- data.table(sites_sf)[, geometry := NULL]
-  ordered_sites <- sites_dt[order(-Nvisit, -Ncount, gid),]
   
-  # Rank sites within each grid and select top 300 based on their overall ranking
-  ordered_sites <- ordered_sites[, gid_ord := 1:.N, by = gid][order(-Nvisit, -Ncount, gid),]
-  ordered_sites <- ordered_sites[order(gid_ord, -Nvisit, -Ncount),][1:300,]
-  selected_sites <- ordered_sites[, .(SITE_ID, bms_id)]
+  # Unique country codes from subcount
+  unique_countries <- unique(subcount$country_code)
   
-  # Rank sites by year for more nuanced selection
-  selected_sites_by_year <- list()
-  for (k in unique(ordered_sites$year)) {
-    temp_data <- ordered_sites[year == k,][, gid_ord := 1:.N, by = gid]
-    temp_data <- temp_data[order(gid_ord, -Nvisit, -Ncount),]
-    selected_sites_by_year[[k]] <- temp_data[, .(gid_ord, SITE_ID)]
-    names(selected_sites_by_year[[k]]) <- c("grid_ord", paste0("SITE_ID_", k))
+  # Initialize an empty list to store the sf objects for each country
+  country_maps <- list()
+  
+  # Loop through the unique country codes to fetch each country's map using getData
+  for (code in unique_countries) {
+    # Attempt to fetch the country map using GADM data, level 0 (country level)
+    country_map <- tryCatch({
+      getData('GADM', country = code, level = 0)
+    }, error = function(e) NULL) # Skip countries that result in an error
+    
+    # If a map was successfully fetched, convert it to an sf object and add it to the list
+    if (!is.null(country_map)) {
+      country_map_sf <- st_as_sf(country_map, crs = st_crs(subcount_visit_n_sf))
+      country_maps[[code]] <- country_map_sf
+    }
   }
   
-  # Combine yearly rankings into a single data frame and fill NA values
-  selected_sites_combined <- Reduce(function(x, y) merge(x, y, by = "SITE_ID", all = TRUE), selected_sites_by_year)
-  selected_sites_combined[is.na(selected_sites_combined)] <- max(unlist(selected_sites_combined), na.rm = TRUE) + 1
+  # Combine all the sf objects into a single sf object
+  combined_map <- do.call(rbind, country_maps)
   
-  # Calculate mean rank across years and reorder sites based on this ranking
-  selected_sites_combined$mean_rank <- rowMeans(selected_sites_combined[, sapply(selected_sites_combined, is.numeric)], na.rm = TRUE)
-  final_ranked_sites <- selected_sites_combined[order(mean_rank)]
+  # Transform combined_map to EPSG:3035
+  combined_map <- st_transform(combined_map, crs = st_crs(subcount_visit_n_sf))
   
-  # Select the top 300 sites based on mean rank
-  top_sites <- final_ranked_sites[1:300,]
+  comb_grid<- st_as_sf(st_make_grid(st_bbox(combined_map), cellsize = 100000 , square = TRUE,  what = "polygons"))
   
-  # Filter the original subcount data to include only the top ranked sites
-  filtered_subcount <- subcount[SITE_ID %in% top_sites$SITE_ID,]
-  return(filtered_subcount)
+  # Perform the intersection check
+  intersects_list <- st_intersects(comb_grid, combined_map)
+  
+  # Create a logical vector where TRUE indicates an intersection
+  intersects_any <- sapply(intersects_list, length) > 0
+  
+  # Optionally, filter comb_grid to keep only intersecting cells
+  comb_grid_intersecting <- comb_grid[intersects_any, ]
+  
+  # Assuming you want to add a unique ID to each grid cell
+  comb_grid_intersecting$gid <- 1:nrow(comb_grid_intersecting)
+  
+  subcount_visit_n_sf$gid<-  as.numeric(st_intersects(subcount_visit_n_sf, comb_grid_terr))
+  
+  subcount_visit_n_dt <- data.table(subcount_visit_n_sf)[, geometry := NULL]
+  
+  subcount_visit_n<-subcount_visit_n_dt[order(-Nvisit, -Ncount, gid),]
+  
+  subcount_visit_n[, gid_ord := 1:.N, by = gid][order(-Nvisit, -Ncount, gid),][order(gid_ord, -Nvisit, -Ncount),][1:300,]
+  
+  rank_sites <- NULL
+  rank_sites <- subcount_visit_n[, SITE_ID, bms_id]
+  
+  
+  for(k in unique(subcount_visit_n$year)){
+    
+    subcount_visit_n_year<-subcount_visit_n[year== k,][, gid_ord := 1:.N, by = gid][order(-Nvisit, -Ncount, gid),][order(gid_ord, -Nvisit, -Ncount),]
+    subcount_visit_gid_year<-subcount_visit_n_year[,  gid_ord, SITE_ID]
+    setnames(subcount_visit_gid_year, "gid_ord", paste("grid_ord", k, sep=""))
+    
+    rank_sites<-merge(rank_sites, subcount_visit_gid_year, by = "SITE_ID", all.x=TRUE)
+    rank_sites <- data.frame(rank_sites)
+    rank_sites[is.na(rank_sites)]<- max(rank_sites[,ncol(rank_sites)], na.rm= TRUE) + 1
+    
+  }
+  
+  rank_sites$mean<-rowMeans(rank_sites%>%select_if(is.numeric))
+  rank_sites <- data.table(rank_sites)
+  
+  rank_sites <- rank_sites[order(-mean)][, mean, SITE_ID]
+  
+  unique_rank_sites <- unique(rank_sites$SITE_ID)[1:300]
+  
+  top_rank_sites <- rank_sites[SITE_ID %in% unique_rank_sites]
+  
+  subcount_ordered <- merge(top_rank_sites, subcount, by = "SITE_ID", all.x = TRUE)
+  
+  return(subcount_ordered)
 }
 
-# Example usage of the function
-# Adjust the function call as per your actual data variable names and country code
-# result_data <- rank_sites(subcount = your_subcount_data, m_visit = your_visit_data, m_coord = your_coordinates_data, country_code = "GBR")
 
 
 # --- Function to calculate start and end months for monitoring season based on visit data --- #
