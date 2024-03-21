@@ -18,6 +18,10 @@ library(suncalc)     # For calculating photoperiod
 library(sf)          # For managing spatial data
 library(doParallel)  # For increasing loop performance
 
+
+# >>> Run functions in FUNCTIONS.R  <<< #
+
+
 # Data Import and Preparation
 
 # eBMS data
@@ -269,50 +273,80 @@ for(region in unique(m_count$geo_region)){
     
     # Attempt to process data for each species within the region
       foreach(species = unique_species, .combine = 'rbind', .packages = c("rbms", "data.table")) %do% {
-        # Subset data for the current species in the current region
-        speciescount_data <- rclimcount_data %>% filter(SPECIES  == species)
         
-        # Filter speciescount_data by the 300 top sites using function rank_sites
-        top_speciescount_data <- rank_sites(speciescount_data, rclimvisit_data, rclimcoord_data)
+        tryCatch({
+          
+          # Subset data for the current species in the current region
+          speciescount_data <- rclimcount_data %>% filter(SPECIES  == species)
+          
+          # Filter speciescount_data by some criteria (5  sites with minim occurrence = 3 in at least 3 years)
+            # Step 1: Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
+            species_yearly_occurrences <- speciescount_data %>%
+            filter(COUNT > 0) %>%
+            group_by(SPECIES, SITE_ID, YEAR) %>%
+              summarise(DaysWithOccurrences = n_distinct(OBS_DATE)) %>%
+              filter(DaysWithOccurrences >= 3) %>%
+              ungroup() %>%
+              group_by(SPECIES, SITE_ID) %>%
+              summarise(YearsWithOccurrences = n_distinct(YEAR)) %>%
+              filter(YearsWithOccurrences >= 3) %>%
+              ungroup()
+            # Step 2: Filter species based on the number of sites meeting the criteria. Keeps only those species that met the criteria at 5 or more distinct sites.
+            species_meeting_criteria <- species_yearly_occurrences %>%
+              group_by(SPECIES) %>%
+              summarise(SitesMeetingCriteria = n_distinct(SITE_ID)) %>%
+              filter(SitesMeetingCriteria >= 5) %>%
+              pull(SPECIES) %>%
+              unique()
+          
+          # Filter speciescount_data by the 300 top sites using function rank_sites
+          top_speciescount_data <- rank_sites(species_meeting_criteria, rclimvisit_data, rclimcoord_data)
+          
+          # Output the species being processed
+          cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
+          species_counter <- species_counter + 1
+          
+          # Perform operations for the current species
+          ts_season_count <- rbms::ts_monit_count_site(ts_season_visit, top_speciescount_data, 
+                                                       sp = species)
+          ts_flight_curve <- rbms::flight_curve(ts_season_count, NbrSample = 300, 
+                                                MinVisit = 10, MinOccur = 3, MinNbrSite = 5, 
+                                                MaxTrial = 4, GamFamily = 'poisson', 
+                                                SpeedGam = FALSE, CompltSeason = TRUE, 
+                                                SelectYear = NULL, TimeUnit = 'd')
+          
+          # extract phenology data from the ts_fligh_curve list
+          
+          pheno <- ts_flight_curve$pheno
+          
+          # Impute predicted counts for missing monitoring dates
+          
+          impt_counts <- rbms::impute_count(ts_season_count = ts_season_count, 
+                                            ts_flight_curve = pheno, YearLimit = NULL, 
+                                            TimeUnit = 'd')
+          sindex <- rbms::site_index(butterfly_count = impt_counts, MinFC = 0.10)
+          
+          # Ensure the species and region names are included in the results
+          sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
+          
+          # Save results to CSV within the loop for each species
+          species_filename <- sprintf("%s/results_%s_%s_%s.csv", base_path, gsub(" ", "_", region), gsub(" ", "_", rclim), gsub(" ", "_", species))
+          
+          # Check if sindex is not empty (has rows)
+          if (nrow(sindex) > 0) {
+            fwrite(sindex, species_filename)
+            warning(sprintf("File '%s' was successfully saved.", species_filename), immediate. = TRUE)
+          } else {
+            warning(sprintf("sindex is empty. File '%s' was not saved.", species_filename), immediate. = TRUE)
+          }
+          
+          
+        }, error = function(e) {
+          cat("Error with species:", species, "in rclim:", rclim, "Error message:", e$message, "\n")
+          NULL # Return NULL as indicator of failure that can be handled later
+        })
         
-        # Output the species being processed
-        cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
-        species_counter <- species_counter + 1
         
-        # Perform operations for the current species
-        ts_season_count <- rbms::ts_monit_count_site(ts_season_visit, top_speciescount_data, 
-                                                     sp = species)
-        ts_flight_curve <- rbms::flight_curve(ts_season_count, NbrSample = 300, 
-                                              MinVisit = 10, MinOccur = 3, MinNbrSite = 5, 
-                                              MaxTrial = 4, GamFamily = 'poisson', 
-                                              SpeedGam = FALSE, CompltSeason = TRUE, 
-                                              SelectYear = NULL, TimeUnit = 'd')
-        
-        # extract phenology data from the ts_fligh_curve list
-        
-        pheno <- ts_flight_curve$pheno
-        
-        # Impute predicted counts for missing monitoring dates
-        
-        impt_counts <- rbms::impute_count(ts_season_count = ts_season_count, 
-                                          ts_flight_curve = pheno, YearLimit = NULL, 
-                                          TimeUnit = 'd')
-        sindex <- rbms::site_index(butterfly_count = impt_counts, MinFC = 0.10)
-        
-        # Ensure the species and region names are included in the results
-        sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
-        
-        # Save results to CSV within the loop for each species
-        species_filename <- sprintf("%s/results_%s_%s_%s.csv", base_path, gsub(" ", "_", region), gsub(" ", "_", rclim), gsub(" ", "_", species))
-        
-        # Check if sindex is not empty (has rows)
-        if (nrow(sindex) > 0) {
-          fwrite(sindex, species_filename)
-          warning(sprintf("File '%s' was successfully saved.", species_filename), immediate. = TRUE)
-        } else {
-          warning(sprintf("sindex is empty. File '%s' was not saved.", species_filename), immediate. = TRUE)
-        }
-
       } # End of species loop
       
       region_counter <- region_counter + 1 # Move to the next region
