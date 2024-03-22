@@ -43,7 +43,7 @@ rank_sites <- function(subcount, m_visit, m_cord) {
   for (code in unique_countries) {
     # Attempt to fetch the country map using GADM data, level 0 (country level)
     country_map <- tryCatch({
-      getData('GADM', country = code, level = 0)
+      raster::getData('GADM', country = code, level = 0)
     }, error = function(e) NULL) # Skip countries that result in an error
     
     # If a map was successfully fetched, convert it to an sf object and add it to the list
@@ -73,7 +73,7 @@ rank_sites <- function(subcount, m_visit, m_cord) {
   # Assuming you want to add a unique ID to each grid cell
   comb_grid_intersecting$gid <- 1:nrow(comb_grid_intersecting)
   
-  subcount_visit_n_sf$gid<-  as.numeric(st_intersects(subcount_visit_n_sf, comb_grid_terr))
+  subcount_visit_n_sf$gid<-  as.numeric(st_intersects(subcount_visit_n_sf, comb_grid_intersecting))
   
   subcount_visit_n_dt <- data.table(subcount_visit_n_sf)[, geometry := NULL]
   
@@ -104,11 +104,11 @@ rank_sites <- function(subcount, m_visit, m_cord) {
   
   unique_rank_sites <- unique(rank_sites$SITE_ID)[1:300]
   
-  top_rank_sites <- rank_sites[SITE_ID %in% unique_rank_sites]
+  # Filter 'subcount' to keep only rows where SITE_ID is in 'unique_rank_sites'
+  filtered_subcount <- subcount[subcount$SITE_ID %in% unique_rank_sites, ]
   
-  subcount_ordered <- merge(top_rank_sites, subcount, by = "SITE_ID", all.x = TRUE)
   
-  return(subcount_ordered)
+  return(filtered_subcount)
 }
 
 
