@@ -219,6 +219,12 @@ m_visit <- m_visit %>%
             by = c("bms_id" = "bms_id", "SITE_ID" = "transect_id"))
 
 
+
+
+
+
+
+
 # --- Flight curves and SINDEX calculation --- #
 
 # Register the parallel backend to improve performance
@@ -245,7 +251,7 @@ for(region in unique(m_count$geo_region)){
   region_counter <- 1 # Track processed regions
   
   # Analyze data for each climate region
-  for(rclim in unique_rclim){
+  for(rclim in unique(na.omit(geocount_data$RCLIM))){
     # Filter data for the current region
     rclimcount_data <- geocount_data %>% filter(RCLIM == rclim)
     rclimvisit_data <- geovisit_data %>% filter(RCLIM == rclim)
@@ -272,39 +278,37 @@ for(region in unique(m_count$geo_region)){
     ts_season_visit <- rbms::ts_monit_site(ts_season, rclimvisit_data)
     
     # Attempt to process data for each species within the region
-      foreach(species = unique_species, .combine = 'rbind', .packages = c("rbms", "data.table")) %do% {
+        for(species in unique(rclimcount_data$SPECIES)){
         
-        tryCatch({
+          species_filename <- sprintf("%s/results_%s_%s_%s.csv", base_path, gsub(" ", "_", region), gsub(" ", "_", rclim), gsub(" ", "_", species))
+          
+          cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
+          species_counter <- species_counter + 1
           
           # Subset data for the current species in the current region
           speciescount_data <- rclimcount_data %>% filter(SPECIES  == species)
-          
+    
           # Filter speciescount_data by some criteria (5  sites with minim occurrence = 3 in at least 3 years)
-            # Step 1: Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
-            species_yearly_occurrences <- speciescount_data %>%
-            filter(COUNT > 0) %>%
-            group_by(SPECIES, SITE_ID, YEAR) %>%
-              summarise(DaysWithOccurrences = n_distinct(OBS_DATE)) %>%
-              filter(DaysWithOccurrences >= 3) %>%
-              ungroup() %>%
-              group_by(SPECIES, SITE_ID) %>%
-              summarise(YearsWithOccurrences = n_distinct(YEAR)) %>%
-              filter(YearsWithOccurrences >= 3) %>%
-              ungroup()
-            # Step 2: Filter species based on the number of sites meeting the criteria. Keeps only those species that met the criteria at 5 or more distinct sites.
-            species_meeting_criteria <- species_yearly_occurrences %>%
-              group_by(SPECIES) %>%
-              summarise(SitesMeetingCriteria = n_distinct(SITE_ID)) %>%
-              filter(SitesMeetingCriteria >= 5) %>%
-              pull(SPECIES) %>%
-              unique()
+          # Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
+          species_yearly_occurrences <- speciescount_data %>%
+            filter(COUNT >= 1) %>%
+            group_by(SITE_ID, year) %>%
+            summarise(DaysWithOccurrences = n_distinct(DATE), .groups = "drop") %>%
+            filter(DaysWithOccurrences >= 3) %>%
+            group_by(SITE_ID) %>%
+            summarise(YearsWithOccurrences = n_distinct(year), .groups = "drop") %>%
+            filter(YearsWithOccurrences >= 3)
+          
+    
+      # Check if the file already exists
+      if (!file.exists(species_filename)) {
+      
+      if(nrow(species_yearly_occurrences) >=5 ){
+          
+          tryCatch({
           
           # Filter speciescount_data by the 300 top sites using function rank_sites
-          top_speciescount_data <- rank_sites(species_meeting_criteria, rclimvisit_data, rclimcoord_data)
-          
-          # Output the species being processed
-          cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
-          species_counter <- species_counter + 1
+          top_speciescount_data <- rank_sites(speciescount_data, rclimvisit_data, rclimcoord_data)
           
           # Perform operations for the current species
           ts_season_count <- rbms::ts_monit_count_site(ts_season_visit, top_speciescount_data, 
@@ -329,9 +333,6 @@ for(region in unique(m_count$geo_region)){
           # Ensure the species and region names are included in the results
           sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
           
-          # Save results to CSV within the loop for each species
-          species_filename <- sprintf("%s/results_%s_%s_%s.csv", base_path, gsub(" ", "_", region), gsub(" ", "_", rclim), gsub(" ", "_", species))
-          
           # Check if sindex is not empty (has rows)
           if (nrow(sindex) > 0) {
             fwrite(sindex, species_filename)
@@ -346,6 +347,14 @@ for(region in unique(m_count$geo_region)){
           NULL # Return NULL as indicator of failure that can be handled later
         })
         
+      } else {
+        cat("File exists, skipping: ", species, "\n")
+      }
+        
+      } else {
+        cat(sprintf("%s does not meet the site occurrence criteria at more than 5 sites, skipping.\n", species))
+        # Skip to the next species
+      } 
         
       } # End of species loop
       
