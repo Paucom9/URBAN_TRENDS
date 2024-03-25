@@ -3,6 +3,7 @@
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
 setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/My Drive/MEDYCI_SATURNO_DOING/MEDYCI/URBAN_TRENDS")
 
 # Load required libraries
 library(data.table)  # For efficient data handling
@@ -137,7 +138,8 @@ m_count$RCLIM <- replace(m_count$RCLIM, is.na(m_count$RCLIM), "K. Warm temperate
 min_latitude <- 28.07431
 max_latitude <- 67.47644
 date <- as.Date("2024-06-20") # summer solstice in 2024
-day_length_ymin <- calculate_day_length(min_latitude, date)
+library(growR) #added by YM, calculate_day_length not working in my lapop
+day_length_ymin <- calculate_day_length(min_latitude, date) 
 day_length_ymax <- 24
 
 # Total day-length difference
@@ -232,6 +234,8 @@ registerDoParallel(cores = detectCores())
 
 # Define the base path where you want to save the files
 base_path <- "D:/URBAN TRENDS/sindex_results"
+base_path <- "/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/My Drive/MEDYCI_SATURNO_DOING/MEDYCI/URBAN_TRENDS/sindex_results"
+
 
 # Iterate over each unique geographic region in the monitoring count data
 for(region in unique(m_count$geo_region)){
