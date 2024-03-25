@@ -301,7 +301,7 @@ for(region in unique(m_count$geo_region)){
           
     
       # Check if the file already exists
-      if (!file.exists(species_filename)) {
+      if (!file.exists(species_filename)){
       
       if(nrow(species_yearly_occurrences) >=5 ){
           
@@ -333,28 +333,21 @@ for(region in unique(m_count$geo_region)){
           # Ensure the species and region names are included in the results
           sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
           
-          # Check if sindex is not empty (has rows)
-          if (nrow(sindex) > 0) {
-            fwrite(sindex, species_filename)
-            warning(sprintf("File '%s' was successfully saved.", species_filename), immediate. = TRUE)
-          } else {
-            warning(sprintf("sindex is empty. File '%s' was not saved.", species_filename), immediate. = TRUE)
-          }
-          
           
         }, error = function(e) {
           cat("Error with species:", species, "in rclim:", rclim, "Error message:", e$message, "\n")
           NULL # Return NULL as indicator of failure that can be handled later
         })
         
-      } else {
-        cat("File exists, skipping: ", species, "\n")
-      }
         
       } else {
         cat(sprintf("%s does not meet the site occurrence criteria at more than 5 sites, skipping.\n", species))
         # Skip to the next species
       } 
+        
+      } else {
+        cat("File exists, skipping: ", species, "\n")
+      }
         
       } # End of species loop
       
