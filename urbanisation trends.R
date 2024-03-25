@@ -14,9 +14,9 @@ library(merTools)
 # --> charge data from Urbanisation plots.R
 
 
-# --- Exploring built trends --- #
+# --- Exploring trends --- #
 
-# Reshaping the data to long format
+# Reshaping the built data to long format
 built_long <- built_df %>%
   pivot_longer(
     cols = c(starts_with("point_"), starts_with("sum_500m_"), starts_with("sum_1000m_"), starts_with("sum_2000m_")),
@@ -36,8 +36,30 @@ built_long <- built_long %>%
 
 # Ensure that 'transect_id' and 'bms_id' are factors
 built_long$transect_id <- factor(built_long$transect_id)
-built_long$bms_id <- factor(longer_df$bms_id)
+built_long$bms_id <- factor(built_long$bms_id)
 
+
+# Reshaping the population data to long format
+pop_long <- pop_df %>%
+  pivot_longer(
+    cols = c(starts_with("point_"), starts_with("sum_500m_"), starts_with("sum_1000m_"), starts_with("sum_2000m_")),
+    names_to = c(".value", "year"),
+    names_pattern = "(.*)_(\\d+)$"
+  )
+
+# Further reshape the data to have a single measurement column
+pop_long <- pop_long %>%
+  pivot_longer(cols = c(point, sum_500m, sum_1000m, sum_2000m),
+               names_to = "variable",
+               values_to = "value")
+
+# Convert 'year' to numeric
+pop_long <- pop_long %>%
+  mutate(year = as.numeric(year))
+
+# Ensure that 'transect_id' and 'bms_id' are factors
+pop_long$transect_id <- factor(pop_long$transect_id)
+pop_long$bms_id <- factor(pop_long$bms_id)
 
 
 # plot trends
@@ -64,8 +86,6 @@ predictions <- predict(model_adjusted, newdata = new_data, re.form = NA)
 
 # Add predictions to new_data
 new_data$predicted_value <- predictions
-
-
 
 ggplot(new_data, aes(x = year, y = predicted_value, color = bms_id)) +
   geom_line() +  # Add line for predicted values
@@ -177,11 +197,6 @@ filtered_aggregated_df <- aggregated_df %>%
 
 
 
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(broom)
-
 # Ensure built_long$transect_id is of the same type as filtered_aggregated_df$SITE_ID
 built_long$transect_id <- as.character(built_long$transect_id)
 
@@ -219,6 +234,96 @@ results <- filtered_aggregated_df %>%
 # Inspect the results
 print(results)
 
+
+
+
+
+# --- Analyse long-term shifts in built-up fraction and population number --- #
+
+head(built_long)
+head(pop_long)
+pop_long <- na.omit(pop_long)
+
+# Perform regression analysis for each transect_id and variable
+regression_results_built <- built_long %>%
+  group_by(transect_id, variable) %>%
+  do(model = lm(value ~ year, data = .)) %>%
+  ungroup() %>%
+  mutate(tidy_model = map(model, tidy)) %>%
+  select(-model) %>%
+  unnest(tidy_model)
+
+regression_results_pop <- pop_long %>%
+  group_by(transect_id, variable) %>%
+  do(model = lm(value ~ year, data = .)) %>%
+  ungroup() %>%
+  mutate(tidy_model = map(model, tidy)) %>%
+  select(-model) %>%
+  unnest(tidy_model)
+
+
+# Convert the results into a data table format (if you specifically want a 'data.table')
+regression_results_built_dt <- as.data.table(regression_results_built)
+regression_results_pop_dt <- as.data.table(regression_results_pop)
+
+# Filter out the intercept rows
+regression_results_built_dt <- regression_results_built_dt[term != "(Intercept)"]
+regression_results_pop_dt <- regression_results_pop_dt[term != "(Intercept)"]
+
+# Remove the 'term' column
+regression_results_built_dt[, term := NULL]
+regression_results_pop_dt[, term := NULL]
+
+# Create a mapping of transect_id to longitude and latitude
+setDT(built_long)
+lon_lat_mapping <- unique(built_long[, .(longitude, latitude), by = transect_id])
+
+# Merge the mapping with regression results
+regression_results_built_dt <- merge(regression_results_built_dt, lon_lat_mapping, by = "transect_id", all.x = TRUE)
+regression_results_pop_dt <- merge(regression_results_pop_dt, lon_lat_mapping, by = "transect_id", all.x = TRUE)
+
+# Convert these points to sf objects using projection EPSG:3035)
+built_sf <- st_as_sf(regression_results_built_dt, coords = c("longitude", "latitude"), crs = 3035)
+pop_sf <- st_as_sf(regression_results_pop_dt, coords = c("longitude", "latitude"), crs = 3035)
+
+
+
+
+#Plot the maps
+
+ built_plot<- ggplot() +
+  geom_sf(data = world, fill = "lightgrey", color = "white") + # Draw countries
+   geom_sf(data = subset(built_sf, variable == "point"), aes(color = estimate), size = 1) + # Filter and color by estimate
+   scale_color_gradientn(colors = c("green", "yellow", "red"),
+                        values = scales::rescale(c(0, 0.01, 0.5, 1))) + # Define a continuous color scale  labs(
+  labs(title = "Built-up fraction (1975-2025 trend)",
+         color = "Estimate"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5), # Increase and center title size
+  ) +
+  coord_sf(crs = st_crs(3035), xlim = c(1602962, 5366783), ylim = c(1000000, 5100000))
+
+ pop_plot<- ggplot() +
+   geom_sf(data = world, fill = "lightgrey", color = "white") + # Draw countries
+   geom_sf(data = subset(pop_sf, variable == "point"), aes(color = estimate), size = 1) + # Filter and color by estimate
+   scale_color_gradientn(colors = c("green", "yellow", "red"),
+                         values = scales::rescale(c(0, 0.01, 0.5, 1))) + # Define a continuous color scale  labs(
+   labs(title = "Human population number (1975-2025 trend)",
+        color = "Estimate"
+   ) +
+   theme_minimal() +
+   theme(
+     plot.title = element_text(size = 14, hjust = 0.5), # Increase and center title size
+   ) +
+   coord_sf(crs = st_crs(3035), xlim = c(1602962, 5366783), ylim = c(1000000, 5100000))
+ 
+ 
+combined_plot <- pop_plot + built_plot + plot_layout(ncol = 2)
+combined_plot <- combined_plot + plot_annotation(title = "100x100m", 
+                                                 theme = theme(plot.title = element_text(size = 20, hjust = 0.5)))
+combined_plot
 
 
 
