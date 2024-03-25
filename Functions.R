@@ -6,7 +6,6 @@
 
 #Required libraries
 library(sf)
-library(rnaturalearth)
 library(data.table)
 
 rank_sites <- function(subcount, m_visit, m_cord) {
