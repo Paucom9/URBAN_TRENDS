@@ -22,89 +22,46 @@ head(sindex)
 
 sindex_filt <- sindex %>%
   group_by(SPECIES, SITE_ID, RCLIM) %>%
-  # Asegúrate primero de que hay al menos 10 años distintos de datos
+  # First, make sure that there are at least 10 different years of data
   filter(n_distinct(M_YEAR) >= 10) %>%
-  # Luego, para cada grupo, calcula el porcentaje de años con SINDEX < 1
+  # Then, for each group, calculate the percentage of years with SINDEX < 1
   mutate(porcentaje_bajo_1 = sum(SINDEX < 1, na.rm = TRUE) / n()) %>%
-  # Filtra para mantener solo aquellos grupos donde menos de la mitad de los años tienen SINDEX < 1
+  # Filter to keep only those groups where less than half of the years have SINDEX < 1
   filter(porcentaje_bajo_1 <= 0.5) %>%
-  # Elimina la columna auxiliar usada para el cálculo
+  # Remove the auxiliary column used for the calculation
   select(-porcentaje_bajo_1) %>%
   ungroup()
 
-print(sindex_filt)
+head(sindex_filt)
 
-#Check temporal autocorrelation in each temporal series
-
-resultados_autocorrelacion <- sindex_filt %>%
-  group_by(SPECIES, RCLIM, SITE_ID) %>%
-  do({
-    data_serie = .
-    modelo = lm(SINDEX ~ M_YEAR, data = data_serie)
-    residuos = resid(modelo)
-    
-    # Determina el número de lags basándose en la longitud de la serie
-    # Por ejemplo, usa el mínimo entre 10 y un tercio de la longitud de la serie
-    n_lags = min(10, max(1, floor(length(residuos) / 3)))
-    
-    test = Box.test(residuos, type = "Ljung-Box", lag = n_lags)
-    data.frame(p_value = test$p.value, n_lags = n_lags)
-  }) %>%
-  ungroup() %>%
-  mutate(autocorrelation_present = p_value < 0.05) # Añade una columna indicando presencia de autocorrelación
-
-# Verifica los resultados
-print(resultados_autocorrelacion)
-
-# Resumen de la presencia de autocorrelación
-resumen_autocorrelacion <- resultados_autocorrelacion %>%
-  summarise(
-    Con_Autocorrelacion = sum(autocorrelation_present, na.rm = TRUE),
-    Sin_Autocorrelacion = sum(!autocorrelation_present, na.rm = TRUE),
-    NA_Autocorrelacion = sum(is.na(autocorrelation_present))
-  )
-
-# Muestra el resumen
-print(resumen_autocorrelacion)
-
-grupos_con_autocorrelacion <- resumen_autocorrelacion %>%
-  filter(Con_Autocorrelacion)
+library(dplyr)
+library(broom)
+library(tibble) # For tibble data structures
 
 
-# Linear models accounting for temporal autocorrelation if it is needed
+# Step 1: Nest the data by SPECIES and SITE_ID
+nested_data <- sindex_filt %>%
+  group_by(SPECIES, SITE_ID) %>%
+  nest()
 
-# Paso 1 revisado: Ajustar modelos lineales básicos y extraer coeficientes y p-valores
-modelos_basicos_coefs <- sindex_filt %>%
-  group_by(SPECIES, SITE_ID, RCLIM) %>%
-  do({
-    modelo = lm(SINDEX ~ M_YEAR, data = .)
-    residuos = resid(modelo)
-    n_lags = min(10, max(1, floor(length(residuos) / 3)))
-    autocorr_test = Box.test(resid(modelo), type = "Ljung", lag = n_lags)
-    modelo_summary = summary(modelo)
-    slope_coefs = coef(modelo_summary)["M_YEAR", ]
-    data.frame(Slope = slope_coefs["Estimate"], p_value_slope = slope_coefs["Pr(>|t|)"], p_value_autocorr = autocorr_test$p.value, Modelo = "LM")
-  }) %>%
-  ungroup()
+# Step 2: Fit linear models for each combination and tidy the output
+model_summaries <- nested_data %>%
+  mutate(models = map(data, ~lm(SINDEX ~ M_YEAR, data = .x)),
+         tidied = map(models, tidy)) %>%
+  select(SPECIES, SITE_ID, tidied)
 
-# Ajustar modelos GLS con término de autocorrelación y extraer coeficientes y p-valores
-modelos_con_autocorrelacion_coefs <- sindex_filt %>%
-  semi_join(grupos_con_autocorrelacion, by = c("SPECIES", "SITE_ID", "RCLIM")) %>%
-  group_by(SPECIES, SITE_ID, RCLIM) %>%
-  do({
-    gls_model = gls(SINDEX ~ M_YEAR, data = ., correlation = corAR1(form = ~ M_YEAR))
-    gls_summary = summary(gls_model)
-    # Extrae los coeficientes y p-valores directamente
-    slope_estimate = gls_summary$tTable["M_YEAR", "Value"]
-    slope_p_value = gls_summary$tTable["M_YEAR", "p-value"]
-    data.frame(Slope = slope_estimate, p_value_slope = slope_p_value, Modelo = "GLS")
-  }) %>%
-  ungroup()
+# Step 3: Extract and unnest the summaries
+tidy_summaries <- model_summaries %>%
+  unnest(tidied)
 
-# Combinar los coeficientes en una única tabla
-coeficientes_combinados <- bind_rows(modelos_basicos_coefs, modelos_con_autocorrelacion_coefs)
+# Step 4: Filter for the estimate of M_YEAR only and select required columns
+estimate_summary <- tidy_summaries %>%
+  filter(term == "M_YEAR") %>%
+  select(SPECIES, SITE_ID, estimate, std.error)
 
-# Muestra los coeficientes combinados
-print(coeficientes_combinados)
+# This will give you a tibble with SPECIES, SITE_ID, the estimate of the slope (M_YEAR),
+# and its standard error for each SPECIES*SITE_ID combination.
+print(estimate_summary)
+
 
 
