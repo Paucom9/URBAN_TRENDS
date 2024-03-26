@@ -376,7 +376,8 @@ stopImplicitCluster()
 # --- Compile sindex data --- #
 
 # Set the base path
-base_path <- "D:/URBAN TRENDS/sindex_results"
+base_path <- "D:/URBAN TRENDS/sindex_results/sindex_results"
+
 
 # List all CSV files in the directory
 files <- list.files(base_path, pattern = "\\.csv$", full.names = TRUE)
