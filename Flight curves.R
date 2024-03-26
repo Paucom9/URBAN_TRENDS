@@ -36,8 +36,7 @@ ebms_clim_df <- read.csv("ebms_transect_climate.csv", sep = ",", dec = ".")
 # Import transect coordinates
 ebms_coord_df <- read.csv("ebms_transect_coord.csv", sep = ",", dec = ".")
 # Import country codes
-country_codes <- read.csv("country_codes.csv", sep = ",", dec = ".")
-country_codes$country_code[country_codes$country_code %in% c("ES-CT", "ES-ZE")] <- "ESP"
+country_codes <- read.csv("country_codes.csv", sep = ";", dec = ".")
 
 # Extract bms_id from transect_id and select relevant columns
 ebms_clim_df <- ebms_clim_df %>%
@@ -48,14 +47,14 @@ ebms_clim_df <- ebms_clim_df %>%
 # Import count data
 ubms_count_df <- read.csv("output_count_table.csv", sep = ",", dec = ".")
 # Assign a unique identifier to uBMS data
-ubms_count_df$bms_id <- "ES_uBMS"
+ubms_count_df$bms_id <- "ES-uBMS"
 # Select and reorder columns to match the structure of eBMS count data
 ubms_count_df <- ubms_count_df %>%
   dplyr::select(visit_id, bms_id, transect_id, visit_date, year, month, day, species_name, count)
 
 # Import visit data and perform necessary transformations
 ubms_visit_df <- read.csv("raw_ubms_ebms_visit.csv", sep = ",", dec = ".")
-ubms_visit_df$bms_id <- "ES_uBMS"  # Assign the uBMS identifier
+ubms_visit_df$bms_id <- "ES-uBMS"  # Assign the uBMS identifier
 
 # Rename columns and calculate date components
 ubms_visit_df <- ubms_visit_df %>%
@@ -76,7 +75,7 @@ ubms_visit_df <- ubms_visit_df %>%
 # Import transect cooordinates
 ubms_coord <- read.csv("ubms_sites.csv", sep = ";", dec = ".")
 
-ubms_coord <- ubms_coord %>%mutate(bms_id = "ES_uBMS")
+ubms_coord <- ubms_coord %>%mutate(bms_id = "ES-uBMS")
 
 # Filter out rows with NA in coordinates before transformation
 ubms_coord_filtered <- ubms_coord %>%
@@ -138,7 +137,7 @@ m_count$RCLIM <- replace(m_count$RCLIM, is.na(m_count$RCLIM), "K. Warm temperate
 min_latitude <- 28.07431
 max_latitude <- 67.47644
 date <- as.Date("2024-06-20") # summer solstice in 2024
-library(growR) #added by YM, calculate_day_length not working in my lapop
+#library(growR) #added by YM, calculate_day_length not working in my lapop
 day_length_ymin <- calculate_day_length(min_latitude, date) 
 day_length_ymax <- 24
 
@@ -210,6 +209,7 @@ m_coord_clean <- merge(m_coord_clean, m_clim[, c("SITE_ID", "RCLIM")], by.x = "t
 
 m_coord_clean<- data.table(m_coord_clean)
 
+
 # Joining m_count with m_coord_clean to include geo_region based on bms_id and the corresponding site/transect ID
 m_count <- m_count %>%
   left_join(m_coord_clean %>% dplyr::select(bms_id, transect_id, geo_region), 
@@ -238,7 +238,7 @@ base_path <- "/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/
 
 
 # Iterate over each unique geographic region in the monitoring count data
-for(region in unique(m_count$geo_region)){
+for(region in unique(na.omit(m_count$geo_region))){
   
   # Filter monitoring count and visit data for the current latitudinal geographic region
   geocount_data <- m_count %>% filter(.data$geo_region == region)
@@ -276,7 +276,7 @@ for(region in unique(m_count$geo_region)){
     # Generate flight curves for each species in the region
     # Define the monitoring season and set up data for analysis
     ts_date <- rbms::ts_dwmy_table(InitYear = 1976, LastYear = 2021, WeekDay1 = 'monday')
-    ts_season <- rbms::ts_monit_season(ts_date, StartMonth = StartMonth, EndMonth = EndMonth,
+    ts_season <- rbms::ts_monit_season(ts_date, StartMonth = 4, EndMonth = 9,
                                        StartDay = 1, EndDay = NULL, CompltSeason = TRUE, Anchor = TRUE,
                                        AnchorLength = 2, AnchorLag = 2, TimeUnit = 'd')
     ts_season_visit <- rbms::ts_monit_site(ts_season, rclimvisit_data)
@@ -292,22 +292,22 @@ for(region in unique(m_count$geo_region)){
           # Subset data for the current species in the current region
           speciescount_data <- rclimcount_data %>% filter(SPECIES  == species)
     
-          # Filter speciescount_data by some criteria (5  sites with minim occurrence = 3 in at least 3 years)
-          # Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
+          #Filter speciescount_data by some criteria (5  sites with minim occurrence = 3 in at least 3 years)
+          #Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
           species_yearly_occurrences <- speciescount_data %>%
-            filter(COUNT >= 1) %>%
-            group_by(SITE_ID, year) %>%
-            summarise(DaysWithOccurrences = n_distinct(DATE), .groups = "drop") %>%
-            filter(DaysWithOccurrences >= 3) %>%
-            group_by(SITE_ID) %>%
-            summarise(YearsWithOccurrences = n_distinct(year), .groups = "drop") %>%
-            filter(YearsWithOccurrences >= 3)
+            #filter(COUNT >= 1) %>%
+          group_by(SITE_ID, year) %>%
+          summarise(DaysWithOccurrences = n_distinct(DATE), .groups = "drop") %>%
+          filter(DaysWithOccurrences >= 3) %>%
+          group_by(SITE_ID) %>%
+          summarise(YearsWithOccurrences = n_distinct(year), .groups = "drop") %>%
+          filter(YearsWithOccurrences >= 3)
           
     
       # Check if the file already exists
       if (!file.exists(species_filename)){
       
-      if(nrow(species_yearly_occurrences) >=5 ){
+        if(nrow(species_yearly_occurrences) >=5 ){
           
           tryCatch({
           
@@ -337,6 +337,13 @@ for(region in unique(m_count$geo_region)){
           # Ensure the species and region names are included in the results
           sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
           
+          # Save results to CSV within the loop for each species*site 
+          if (nrow(sindex) > 0) {
+            fwrite(sindex, species_filename)
+            warning(sprintf("File '%s' was successfully saved.", species_filename), immediate. = TRUE)
+          } else {
+            warning(sprintf("sindex is empty. File '%s' was not saved.", species_filename), immediate. = TRUE)
+          }
           
         }, error = function(e) {
           cat("Error with species:", species, "in rclim:", rclim, "Error message:", e$message, "\n")
@@ -344,10 +351,10 @@ for(region in unique(m_count$geo_region)){
         })
         
         
-      } else {
-        cat(sprintf("%s does not meet the site occurrence criteria at more than 5 sites, skipping.\n", species))
+        #} else {
+        #cat(sprintf("%s does not meet the site occurrence criteria at more than 5 sites, skipping.\n", species))
         # Skip to the next species
-      } 
+        #} 
         
       } else {
         cat("File exists, skipping: ", species, "\n")
