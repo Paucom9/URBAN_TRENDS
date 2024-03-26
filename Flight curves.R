@@ -229,6 +229,9 @@ m_visit <- m_visit %>%
 
 # --- Flight curves and SINDEX calculation --- #
 
+# Ask to store the console output in a txt. Be aware with sink the output is no seen in the console. 
+sink("outputfile.txt")
+
 # Register the parallel backend to improve performance
 registerDoParallel(cores = detectCores())
 
@@ -372,6 +375,8 @@ for(region in unique(na.omit(m_count$geo_region))){
 # Stop the parallel backend when done
 stopImplicitCluster()
 
+# save console message
+sink()
 
 # --- Compile sindex data --- #
 
