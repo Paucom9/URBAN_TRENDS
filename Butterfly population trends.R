@@ -1,6 +1,6 @@
 ## Clean enviroment and set directory to files
 rm(list=ls())
-setwd("D:/URBAN TRENDS/BMS data")
+setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
 #Libraries
 library(dplyr)
@@ -13,9 +13,12 @@ library(broom)
 library(purrr)
 library(lmtest)
 library(tidyr)
+library(dplyr)
+library(broom)
+library(tibble) 
 
 
-sindex <- read.csv("SINDEX_CAT.csv", sep=",", dec=".")
+sindex <- read.csv("sindex_results.csv", sep=",", dec=".")
 head(sindex)
 
 #Filtering temporal series with a minimum of years and positive values
@@ -23,7 +26,7 @@ head(sindex)
 sindex_filt <- sindex %>%
   group_by(SPECIES, SITE_ID, RCLIM) %>%
   # First, make sure that there are at least 10 different years of data
-  filter(n_distinct(M_YEAR) >= 10) %>%
+  filter(n_distinct(M_YEAR) >= 8) %>%
   # Then, for each group, calculate the percentage of years with SINDEX < 1
   mutate(porcentaje_bajo_1 = sum(SINDEX < 1, na.rm = TRUE) / n()) %>%
   # Filter to keep only those groups where less than half of the years have SINDEX < 1
@@ -34,9 +37,7 @@ sindex_filt <- sindex %>%
 
 head(sindex_filt)
 
-library(dplyr)
-library(broom)
-library(tibble) # For tibble data structures
+
 
 
 # Step 1: Nest the data by SPECIES and SITE_ID
@@ -45,10 +46,24 @@ nested_data <- sindex_filt %>%
   nest()
 
 # Step 2: Fit linear models for each combination and tidy the output
+
+
 model_summaries <- nested_data %>%
-  mutate(models = map(data, ~lm(SINDEX ~ M_YEAR, data = .x)),
-         tidied = map(models, tidy)) %>%
+  mutate(models = map(data, ~{
+    # Omit NAs and remove Inf/-Inf values
+    cleaned_data <- .x %>%
+      na.omit() %>%
+      filter(!is.infinite(SINDEX))
+    
+    if (nrow(cleaned_data) > 0) {
+      lm(SINDEX ~ M_YEAR, data = cleaned_data)
+    } else {
+      return(NULL)  # Returning NULL for groups with no valid data
+    }
+  }),
+  tidied = map(models, ~if (!is.null(.x)) tidy(.x) else NULL)) %>%
   select(SPECIES, SITE_ID, tidied)
+
 
 # Step 3: Extract and unnest the summaries
 tidy_summaries <- model_summaries %>%
