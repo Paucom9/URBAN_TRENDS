@@ -3,7 +3,7 @@
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
 setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
-setwd("/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/My Drive/MEDYCI_SATURNO_DOING/MEDYCI/URBAN_TRENDS")
+setwd("/Users/SUITCASE/Documents/URBAN_TRENDS")
 
 # Load required libraries
 library(data.table)  # For efficient data handling
@@ -229,12 +229,15 @@ m_visit <- m_visit %>%
 
 # --- Flight curves and SINDEX calculation --- #
 
+# Ask to store the console output in a txt. Be aware with sink the output is no seen in the console. 
+sink("outputfile.txt")
+
 # Register the parallel backend to improve performance
 registerDoParallel(cores = detectCores())
 
 # Define the base path where you want to save the files
 base_path <- "D:/URBAN TRENDS/sindex_results"
-base_path <- "/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/My Drive/MEDYCI_SATURNO_DOING/MEDYCI/URBAN_TRENDS/sindex_results"
+base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results"
 
 
 # Iterate over each unique geographic region in the monitoring count data
@@ -282,129 +285,134 @@ for(region in unique(na.omit(m_count$geo_region))){
     ts_season_visit <- rbms::ts_monit_site(ts_season, rclimvisit_data)
     
     # Attempt to process data for each species within the region
-        for(species in unique(rclimcount_data$SPECIES)){
-        
-          species_filename <- sprintf("%s/results_%s_%s_%s.csv", base_path, gsub(" ", "_", region), gsub(" ", "_", rclim), gsub(" ", "_", species))
-          
-          cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
-          species_counter <- species_counter + 1
-          
-          # Subset data for the current species in the current region
-          speciescount_data <- rclimcount_data %>% filter(SPECIES  == species)
-    
-          #Filter speciescount_data by some criteria (5  sites with minim occurrence = 3 in at least 3 years)
-          #Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
-          species_yearly_occurrences <- speciescount_data %>%
-            #filter(COUNT >= 1) %>%
-          group_by(SITE_ID, year) %>%
-          summarise(DaysWithOccurrences = n_distinct(DATE), .groups = "drop") %>%
-          filter(DaysWithOccurrences >= 3) %>%
-          group_by(SITE_ID) %>%
-          summarise(YearsWithOccurrences = n_distinct(year), .groups = "drop") %>%
-          filter(YearsWithOccurrences >= 3)
-          
-    
+    for(species in unique(rclimcount_data$SPECIES)){
+      
+      species_filename <- sprintf("%s/results_%s_%s_%s.csv", base_path, gsub(" ", "_", region), gsub(" ", "_", rclim), gsub(" ", "_", species))
+      
+      cat(sprintf("  Processing species %d/%d: %s\n", species_counter, length(unique_species), species))
+      species_counter <- species_counter + 1
+      
+      # Subset data for the current species in the current region
+      speciescount_data <- rclimcount_data %>% filter(SPECIES  == species)
+      
+      #Filter speciescount_data by some criteria (5  sites with minim occurrence = 3 in at least 3 years)
+      #Assess occurrences per year per species per site. Retains species-site pairs where the species met the occurrence criteria in at least 3 different years
+      species_yearly_occurrences <- speciescount_data %>%
+        #filter(COUNT >= 1) %>%
+        group_by(SITE_ID, year) %>%
+        summarise(DaysWithOccurrences = n_distinct(DATE), .groups = "drop") %>%
+        filter(DaysWithOccurrences >= 3) %>%
+        group_by(SITE_ID) %>%
+        summarise(YearsWithOccurrences = n_distinct(year), .groups = "drop") %>%
+        filter(YearsWithOccurrences >= 3)
+      
+      
       # Check if the file already exists
       if (!file.exists(species_filename)){
-      
+        
         if(nrow(species_yearly_occurrences) >=5 ){
           
           tryCatch({
+            
+            # Filter speciescount_data by the 300 top sites using function rank_sites
+            top_speciescount_data <- rank_sites(speciescount_data, rclimvisit_data, rclimcoord_data)
+            
+            # Perform operations for the current species
+            ts_season_count <- rbms::ts_monit_count_site(ts_season_visit, top_speciescount_data, 
+                                                         sp = species)
+            ts_flight_curve <- rbms::flight_curve(ts_season_count, NbrSample = 300, 
+                                                  MinVisit = 10, MinOccur = 3, MinNbrSite = 5, 
+                                                  MaxTrial = 4, GamFamily = 'poisson', 
+                                                  SpeedGam = FALSE, CompltSeason = TRUE, 
+                                                  SelectYear = NULL, TimeUnit = 'd')
+            
+            # extract phenology data from the ts_fligh_curve list
+            
+            pheno <- ts_flight_curve$pheno
+            
+            # Impute predicted counts for missing monitoring dates
+            
+            impt_counts <- rbms::impute_count(ts_season_count = ts_season_count, 
+                                              ts_flight_curve = pheno, YearLimit = NULL, 
+                                              TimeUnit = 'd')
+            sindex <- rbms::site_index(butterfly_count = impt_counts, MinFC = 0.10)
+            
+            # Ensure the species and region names are included in the results
+            sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
+            
+            # Save results to CSV within the loop for each species*site 
+            if (nrow(sindex) > 0) {
+              fwrite(sindex, species_filename)
+              warning(sprintf("File '%s' was successfully saved.", species_filename), immediate. = TRUE)
+            } else {
+              warning(sprintf("sindex is empty. File '%s' was not saved.", species_filename), immediate. = TRUE)
+            }
+            
+          }, error = function(e) {
+            cat("Error with species:", species, "in rclim:", rclim, "Error message:", e$message, "\n")
+            NULL # Return NULL as indicator of failure that can be handled later
+          })
           
-          # Filter speciescount_data by the 300 top sites using function rank_sites
-          top_speciescount_data <- rank_sites(speciescount_data, rclimvisit_data, rclimcoord_data)
           
-          # Perform operations for the current species
-          ts_season_count <- rbms::ts_monit_count_site(ts_season_visit, top_speciescount_data, 
-                                                       sp = species)
-          ts_flight_curve <- rbms::flight_curve(ts_season_count, NbrSample = 300, 
-                                                MinVisit = 10, MinOccur = 3, MinNbrSite = 5, 
-                                                MaxTrial = 4, GamFamily = 'poisson', 
-                                                SpeedGam = FALSE, CompltSeason = TRUE, 
-                                                SelectYear = NULL, TimeUnit = 'd')
-          
-          # extract phenology data from the ts_fligh_curve list
-          
-          pheno <- ts_flight_curve$pheno
-          
-          # Impute predicted counts for missing monitoring dates
-          
-          impt_counts <- rbms::impute_count(ts_season_count = ts_season_count, 
-                                            ts_flight_curve = pheno, YearLimit = NULL, 
-                                            TimeUnit = 'd')
-          sindex <- rbms::site_index(butterfly_count = impt_counts, MinFC = 0.10)
-          
-          # Ensure the species and region names are included in the results
-          sindex[, `:=`(SPECIES = species, GEO_REGION = region, RCLIM = rclim)]
-          
-          # Save results to CSV within the loop for each species*site 
-          if (nrow(sindex) > 0) {
-            fwrite(sindex, species_filename)
-            warning(sprintf("File '%s' was successfully saved.", species_filename), immediate. = TRUE)
           } else {
-            warning(sprintf("sindex is empty. File '%s' was not saved.", species_filename), immediate. = TRUE)
-          }
+          cat(sprintf("%s does not meet the site occurrence criteria at more than 5 sites, skipping.\n", species))
+          # Skip to the next species
+          } 
           
-        }, error = function(e) {
-          cat("Error with species:", species, "in rclim:", rclim, "Error message:", e$message, "\n")
-          NULL # Return NULL as indicator of failure that can be handled later
-        })
-        
-        
-        #} else {
-        #cat(sprintf("%s does not meet the site occurrence criteria at more than 5 sites, skipping.\n", species))
-        # Skip to the next species
-        #} 
-        
-      } else {
-        cat("File exists, skipping: ", species, "\n")
-      }
+        } else {
+          cat("File exists, skipping: ", species, "\n")
+        }
         
       } # End of species loop
       
       region_counter <- region_counter + 1 # Move to the next region
       
     } # End of rclim loop
-  
+    
   } # End of region loop
-
-
-# Stop the parallel backend when done
-stopImplicitCluster()
-
-
-# --- Compile sindex data --- #
-
-# Set the base path
-base_path <- "D:/URBAN TRENDS/sindex_results/sindex_results"
-
-
-# List all CSV files in the directory
-files <- list.files(base_path, pattern = "\\.csv$", full.names = TRUE)
-
-# Initialize an empty list to store data from each file
-data_list <- list()
-
-# Loop through the files and read each one
-for (i in seq_along(files)) {
-  # Read the current file
-  temp_data <- fread(files[i])
-  # Append the data to the list
-  data_list[[i]] <- temp_data
-}
-
-# Combine all data tables in the list into one
-sindex_data <- rbindlist(data_list, use.names = TRUE, fill = TRUE)
-
-# View the combined data
-print(sindex_data)
-
-# Define the filename and path for the combined data
-output_file_path <- "D:/URBAN TRENDS/sindex_results/sindex_results.csv"
-
-# Save the combined data table to the specified file
-fwrite(sindex_data, output_file_path)
-
-
+  
+  
+  # Stop the parallel backend when done
+  stopImplicitCluster()
+  
+  # save console message
+  sink()
+  
+  # --- Compile sindex data --- #
+  
+  # Set the base path
+  base_path <- "D:/URBAN TRENDS/sindex_results"
+  base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results"
+  
+  # List all CSV files in the directory
+  files <- list.files(base_path, pattern = "\\.csv$", full.names = TRUE)
+  
+  # Initialize an empty list to store data from each file
+  data_list <- list()
+  
+  # Loop through the files and read each one
+  for (i in seq_along(files)) {
+    # Read the current file
+    temp_data <- fread(files[i])
+    # Append the data to the list
+    data_list[[i]] <- temp_data
+  }
+  
+  # Combine all data tables in the list into one
+  sindex_data <- rbindlist(data_list, use.names = TRUE, fill = TRUE)
+  
+  # View the combined data
+  print(sindex_data)
+  
+  # Define the filename and path for the combined data
+  output_file_path <- "D:/URBAN TRENDS/sindex_results/sindex_results.csv"
+  output_file_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results/sindex_results.csv"
+  
+  # Save the combined data table to the specified file
+  fwrite(sindex_data, output_file_path)
+  
+  
+  
+  
 
 
