@@ -3,7 +3,7 @@
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
 setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
-setwd("/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/My Drive/MEDYCI_SATURNO_DOING/MEDYCI/URBAN_TRENDS")
+setwd("/Users/SUITCASE/Documents/URBAN_TRENDS")
 
 # Load required libraries
 library(data.table)  # For efficient data handling
@@ -234,7 +234,7 @@ registerDoParallel(cores = detectCores())
 
 # Define the base path where you want to save the files
 base_path <- "D:/URBAN TRENDS/sindex_results"
-base_path <- "/Users/SUITCASE/Library/CloudStorage/GoogleDrive-yolrem@gmail.com/My Drive/MEDYCI_SATURNO_DOING/MEDYCI/URBAN_TRENDS/sindex_results"
+base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results"
 
 
 # Iterate over each unique geographic region in the monitoring count data
@@ -377,6 +377,7 @@ stopImplicitCluster()
 
 # Set the base path
 base_path <- "D:/URBAN TRENDS/sindex_results"
+base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results"
 
 # List all CSV files in the directory
 files <- list.files(base_path, pattern = "\\.csv$", full.names = TRUE)
@@ -400,6 +401,7 @@ print(sindex_data)
 
 # Define the filename and path for the combined data
 output_file_path <- "D:/URBAN TRENDS/sindex_results/sindex_results.csv"
+output_file_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results/sindex_results.csv"
 
 # Save the combined data table to the specified file
 fwrite(sindex_data, output_file_path)
