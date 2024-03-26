@@ -229,7 +229,7 @@ m_visit <- m_visit %>%
 
 # --- Flight curves and SINDEX calculation --- #
 
-# Ask to store the console output in a txt. Be aware with sink the output is no seen in the console. 
+# Ask to store the console output in a txt. 
 sink("outputfile.txt")
 
 # Register the parallel backend to improve performance
