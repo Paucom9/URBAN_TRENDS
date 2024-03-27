@@ -343,3 +343,57 @@ combined_plot <- combined_plot + plot_annotation(title = "100x100m",
                                                  theme = theme(plot.title = element_text(size = 20, hjust = 0.5)))
 combined_plot
 
+
+
+# --- Plot urbanisation trends --- #
+
+# Create a mapping of transect_id to longitude and latitude
+setDT(built_long)
+lon_lat_mapping <- unique(built_long[, .(longitude, latitude), by = transect_id])
+
+# Merge the mapping with regression results
+regression_results_built_dt <- merge(regression_results_built_dt, lon_lat_mapping, by = "transect_id", all.x = TRUE)
+regression_results_pop_dt <- merge(regression_results_pop_dt, lon_lat_mapping, by = "transect_id", all.x = TRUE)
+
+# Convert these points to sf objects using projection EPSG:3035)
+built_sf <- st_as_sf(regression_results_built_dt, coords = c("longitude", "latitude"), crs = 3035)
+pop_sf <- st_as_sf(regression_results_pop_dt, coords = c("longitude", "latitude"), crs = 3035)
+
+
+
+
+#Plot the maps
+
+built_plot<- ggplot() +
+  geom_sf(data = world, fill = "lightgrey", color = "white") + # Draw countries
+  geom_sf(data = subset(built_sf, variable == "point"), aes(color = estimate), size = 1) + # Filter and color by estimate
+  scale_color_gradientn(colors = c("green", "yellow", "red"),
+                        values = scales::rescale(c(0, 0.01, 0.5, 1))) + # Define a continuous color scale  labs(
+  labs(title = "Built-up fraction (1975-2025 trend)",
+       color = "Estimate"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5), # Increase and center title size
+  ) +
+  coord_sf(crs = st_crs(3035), xlim = c(1602962, 5366783), ylim = c(1000000, 5100000))
+
+pop_plot<- ggplot() +
+  geom_sf(data = world, fill = "lightgrey", color = "white") + # Draw countries
+  geom_sf(data = subset(pop_sf, variable == "point"), aes(color = estimate), size = 1) + # Filter and color by estimate
+  scale_color_gradientn(colors = c("green", "yellow", "red"),
+                        values = scales::rescale(c(0, 0.01, 0.5, 1))) + # Define a continuous color scale  labs(
+  labs(title = "Human population number (1975-2025 trend)",
+       color = "Estimate"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, hjust = 0.5), # Increase and center title size
+  ) +
+  coord_sf(crs = st_crs(3035), xlim = c(1602962, 5366783), ylim = c(1000000, 5100000))
+
+
+combined_plot <- pop_plot + built_plot + plot_layout(ncol = 2)
+combined_plot <- combined_plot + plot_annotation(title = "100x100m", 
+                                                 theme = theme(plot.title = element_text(size = 20, hjust = 0.5)))
+combined_plot
