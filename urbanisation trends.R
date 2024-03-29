@@ -102,46 +102,71 @@ sindex_yrs <- sindex_yrs %>%
 
 # --- Loop to calculate for each species*site the associated urbanisation trend --- #
 
-# Initialize an empty data frame to store the summary information
-urb_trends_df <- data.frame(SPECIES = character(),
-                            SITE_ID = character(),
-                            Best_Model = character(),
-                            urb_trend = numeric(),
-                            stringsAsFactors = FALSE) # Prevent conversion to factors
+# Initialize an empty data frame to store the summary information for all variables
+urb_trends_all_df <- data.frame(SPECIES = character(),
+                                SITE_ID = character(),
+                                urb_variable = character(),
+                                Best_Model = character(),
+                                urb_trend = numeric(),
+                                stringsAsFactors = FALSE)  # Prevent conversion to factors
 
-for(i in 1:nrow(sindex_yrs)) {
-  subset_data <- built_dt %>%
-    mutate(transect_id = as.character(transect_id)) %>%
-    filter(transect_id == as.character(sindex_yrs$SITE_ID[i]))
+# Unique variables in built_long
+unique_variables <- unique(built_long$variable)
+
+# Loop over each unique variable
+for(variable in unique_variables) {
   
-  # Fit the four models
-  linear_model <- lm(value_scaled ~ year, data = subset_data)
-  polynomial_model <- lm(value_scaled ~ poly(year, 2), data = subset_data)
-  exponential_model <- lm(log(value + 1) ~ year, data = subset_data)
-  logarithmic_model <- lm(value ~ log(year), data = subset_data)
+  # Filter by a specific variable
+  built_dt <- built_long %>%
+    filter(variable == variable) %>%
+    na.omit() %>%
+    mutate(value_scaled = scale(value))  # Standardizing the 'value' variable
   
-  # Calculate AIC values for each model
-  aic_values <- c(AIC(linear_model), AIC(polynomial_model), AIC(exponential_model), AIC(logarithmic_model))
-  
-  model_names <- c("linear", "polynomial", "exponential", "logarithmic")
-  best_model_name <- model_names[which.min(aic_values)]
-  best_model <- get(paste0(best_model_name, "_model"))
-  
-  # Calculate the slope
-  slope_data <- data.frame(year = c(sindex_yrs$STR_YEAR[i], sindex_yrs$END_YEAR[i]))
-  predicted_values <- predict(best_model, newdata = slope_data)
-  slope <- (predicted_values[2] - predicted_values[1]) / (sindex_yrs$END_YEAR[i] - sindex_yrs$STR_YEAR[i])
-  
-  
-  # Append to the summary data frame
-  urb_trends_df <- rbind(urb_trends_df, data.frame(SPECIES = sindex_yrs$SPECIES[i],
-                                                   SITE_ID = sindex_yrs$SITE_ID[i],
-                                                   Best_Model = best_model_name,
-                                                   urb_trend = slope,
-                                                   stringsAsFactors = FALSE))
+  # Loop over each species*site combination
+  for(i in 1:nrow(sindex_yrs)) {
+    subset_data <- built_dt %>%
+      mutate(transect_id = as.character(transect_id)) %>%
+      filter(transect_id == as.character(sindex_yrs$SITE_ID[i]))
+    
+    # Check if there's enough data to fit the model
+    if(nrow(subset_data) > 1) {
+      # Fit the four models
+      linear_model <- lm(value_scaled ~ year, data = subset_data)
+      polynomial_model <- lm(value_scaled ~ poly(year, 2), data = subset_data)
+      exponential_model <- lm(log(value + 1) ~ year, data = subset_data)
+      logarithmic_model <- lm(value ~ log(year), data = subset_data)
+      
+      # Calculate AIC values for each model
+      aic_values <- c(AIC(linear_model), AIC(polynomial_model), AIC(exponential_model), AIC(logarithmic_model))
+      
+      model_names <- c("linear", "polynomial", "exponential", "logarithmic")
+      best_model_name <- model_names[which.min(aic_values)]
+      best_model <- get(paste0(best_model_name, "_model"))
+      
+      # Prepare data for prediction
+      slope_data <- data.frame(year = c(sindex_yrs$STR_YEAR[i], sindex_yrs$END_YEAR[i]))
+      
+      # Predict using the best model
+      predicted_values <- predict(best_model, newdata = slope_data)
+      
+      # Calculate the slope for the specific period
+      slope <- (predicted_values[2] - predicted_values[1]) / (sindex_yrs$END_YEAR[i] - sindex_yrs$STR_YEAR[i])
+      
+      # Append to the summary data frame
+      urb_trends_all_df <- rbind(urb_trends_all_df, data.frame(SPECIES = sindex_yrs$SPECIES[i],
+                                                               SITE_ID = sindex_yrs$SITE_ID[i],
+                                                               urb_variable = variable,
+                                                               Best_Model = best_model_name,
+                                                               urb_trend = slope,
+                                                               stringsAsFactors = FALSE))
+    }
+  }
 }
 
 # Check the first few rows of the summary
-head(urb_trends_df)
+head(urb_trends_all_df)
+
+
+write.csv(urb_trends_all_df, "D:/URBAN TRENDS/Urbanisation data/urb_trends.csv", row.names = FALSE)
 
 
