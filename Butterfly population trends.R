@@ -9,6 +9,7 @@ library(purrr)
 library(nlme)
 library(broom)
 library(broom.mixed)
+library(readr)
 
 sindex <- read.csv("sindex_results.csv", sep=",", dec=".")
 head(sindex)
@@ -30,7 +31,16 @@ sindex_filt <- sindex %>%
 head(sindex_filt)
 
 
-# Step 1: Nest the data by SPECIES and SITE_ID
+# Adjusting the dataset before nesting
+# Step 0: Center the data by SPECIES and SITE_ID
+sindex_filt <- sindex_filt %>%
+  group_by(SPECIES, SITE_ID) %>%
+  mutate(centered_year = M_YEAR - mean(M_YEAR),
+         log_sindex = log(SINDEX + 1),
+         centered_log_sindex = log_sindex - mean(log_sindex)) %>%
+  ungroup()  # Ensuring we return to the standard dataframe structure
+
+# Step 1: Nest the centered data by SPECIES and SITE_ID
 nested_data <- sindex_filt %>%
   group_by(SPECIES, SITE_ID) %>%
   nest()
@@ -38,35 +48,30 @@ nested_data <- sindex_filt %>%
 # Step 2: Fit generalized least squares models for each combination and tidy the output
 model_summaries <- nested_data %>%
   mutate(models = map(data, ~{
-    # Omit NAs and remove Inf/-Inf values
-    cleaned_data <- .x %>%
-      na.omit() %>%
-      filter(!is.infinite(SINDEX))
-    
     # Ensure there's more than one row for gls to work
-    if (nrow(cleaned_data) > 1) { 
+    if (nrow(.x) > 1) { 
       tryCatch({
-        gls(log(SINDEX + 1) ~ M_YEAR, data = cleaned_data,
-            correlation = corAR1(form = ~ M_YEAR))
+        gls_model <- gls(centered_log_sindex ~ centered_year, data = .x,
+                         correlation = corAR1(form = ~ centered_year))
+        return(tidy(gls_model))
       }, error = function(e) {
-        warning(sprintf("Model failed for group with SPECIES = '%s' and SITE_ID = '%s': %s",
-                        cleaned_data$SPECIES[1], cleaned_data$SITE_ID[1], e$message))
+        warning(sprintf("Model failed for SPECIES = '%s' and SITE_ID = '%s': %s",
+                        .x$SPECIES[1], .x$SITE_ID[1], e$message))
         return(NULL)  # Return NULL if an error occurs, with a warning
       })
     } else {
       return(NULL)  # Returning NULL for groups with no valid data
     }
-  }),
-  tidied = map(models, ~if (!is.null(.x)) tidy(.x) else NULL)) %>%
-  select(SPECIES, SITE_ID, tidied)
+  })) %>%
+  select(SPECIES, SITE_ID, models)
 
 # Step 3: Extract and unnest the summaries
-tidy_summaries <- model_summaries %>%
-  unnest(tidied)
+model_summaries <- model_summaries %>%
+  unnest(models)
 
 # Step 4: Filter for the estimate of M_YEAR only and select required columns
-estimate_summary <- tidy_summaries %>%
-  filter(term == "M_YEAR") %>%
+estimate_summary <- model_summaries %>%
+  filter(term == "centered_year") %>%
   select(SPECIES, SITE_ID, estimate, std.error)
 
 # This will give you a tibble with SPECIES, SITE_ID, the estimate of the slope (M_YEAR),
