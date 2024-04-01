@@ -170,3 +170,128 @@ head(urb_trends_all_df)
 write.csv(urb_trends_all_df, "D:/URBAN TRENDS/Urbanisation data/urb_trends.csv", row.names = FALSE)
 
 
+
+# --- Read and manage MOD data --- #
+
+setwd("D:/URBAN TRENDS/Urbanisation data") 
+mod_ebms <- read.csv("embs_ubms_GHS_MOD_stats.csv", sep = ";", dec = ".")
+mod_ubms <- read.csv("ubms_sites_GHS_MOD.csv", sep = ";", dec = ".")
+
+# Rename columns
+mod_ebms <- mod_ebms %>%
+  rename(
+    transect_id = transect_i,
+    longitude = geometry,
+    latitude = geom1
+  )
+
+mod_ubms <- mod_ubms %>%
+  rename(
+    transect_id = transect_i,
+    longitude = transect_1,
+    latitude = transect_2
+  )
+
+mod_ubms <- mod_ubms %>%
+  select(-transect_l)  # Remove the 'transect_l' column
+
+mod_ubms <- mod_ubms %>%
+  mutate(bms_id = "ES-uBMS") %>% # Add the bms_id column with all values set to "ES_uBMS"
+  select(bms_id, longitude, latitude, everything()) # Reorder column
+
+# rbind ebms and ubms files
+
+mod_df <- rbind(mod_ebms, mod_ubms)
+
+head(mod_df)
+
+
+
+# --- In how many sites the mod category change during the time series? --- #
+
+# Select only the 'point_year' columns
+point_cols <- mod_df[, grepl("^point_", names(mod_df))]
+
+# Compare each year's column to the next to identify changes, handling NA values
+changes <- (point_cols[, -ncol(point_cols)] != point_cols[, -1]) & !is.na(point_cols[, -ncol(point_cols)] | point_cols[, -1])
+
+# Sum these comparisons row-wise to find rows with any changes
+rows_with_changes <- rowSums(changes, na.rm = TRUE) > 0
+
+# Count how many rows have at least one change
+num_rows_with_changes <- sum(rows_with_changes, na.rm = TRUE)
+
+# Percentage of sites that changed the category
+percent_rows <- num_rows_with_changes/nrow(mod_df) * 100
+
+
+
+# --- Select the mod category at the STR_YEAR --- #
+
+head(mod_df)
+head(sindex_yrs)
+
+# Define a function to map STR_YEAR to the corresponding point_year column name
+map_year_to_point_col <- function(year) {
+  # Define the breakpoints and names based on the 5-year intervals in mod_df
+  breakpoints <- seq(1975, 2025, by = 5)
+  names <- paste0("point_", breakpoints)
+  
+  # Find the right interval for the STR_YEAR
+  interval_index <- findInterval(year, breakpoints)
+  # Return the corresponding column name
+  return(names[interval_index])
+}
+
+# Initialize a vector to store the point values
+points <- numeric(nrow(sindex_yrs))
+
+# Loop through each row in sindex_yrs to get the point value
+for(i in 1:nrow(sindex_yrs)) {
+  # Get the current SITE_ID and STR_YEAR
+  site_id <- sindex_yrs$SITE_ID[i]
+  str_year <- sindex_yrs$STR_YEAR[i]
+  
+  # Map STR_YEAR to the corresponding point_year column name
+  point_col_name <- map_year_to_point_col(str_year)
+  
+  # Find the row in mod_df that matches the SITE_ID
+  row_index <- which(mod_df$transect_id == site_id)
+  
+  # If a matching row is found and the point column exists in mod_df
+  if(length(row_index) > 0 && point_col_name %in% names(mod_df)) {
+    # Extract the point value and store it in the points vector
+    points[i] <- mod_df[row_index, point_col_name]
+  } else {
+    # If no matching row or column is found, assign NA
+    points[i] <- NA
+  }
+}
+
+# Now, points vector contains the point values for each row in sindex_yrs based on STR_YEAR
+# You can add this as a new column to sindex_yrs if needed
+sindex_yrs$point <- points
+head(sindex_yrs)
+
+mod_str_yr <- sindex_yrs %>%
+  select(SITE_ID, code_urban = point)
+
+# Now, create a new column 'urban_names' with the mappings
+mod_str_yr <- mod_str_yr %>%
+  mutate(urban_names = case_when(
+    code_urban == 30 ~ "URBAN CENTRE",
+    code_urban == 23 ~ "DENSE URBAN CLUSTER",
+    code_urban == 22 ~ "SEMI-DENSE URBAN CLUSTER",
+    code_urban == 21 ~ "SUBURBAN OR PERI-URBAN",
+    code_urban == 13 ~ "RURAL CLUSTER GRID",
+    code_urban == 12 ~ "LOW DENSITY RURAL",
+    code_urban == 11 ~ "VERY LOW DENSITY RURAL",
+    code_urban == 10 ~ "WATER",
+    TRUE ~ "UNKNOWN"  # This line handles any codes that don't match the above conditions
+  ))
+
+write.csv(mod_str_yr, "D:/URBAN TRENDS/Urbanisation data/mod_str_yr.csv", row.names = FALSE)
+
+
+
+
