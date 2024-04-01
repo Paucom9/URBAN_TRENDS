@@ -3,19 +3,11 @@ rm(list=ls())
 setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
 #Libraries
-library(dplyr)
-library(purrr)
-library(lmtest)
-library(forecast)
-library(dplyr)
-library(nlme)
-library(broom)
-library(purrr)
-library(lmtest)
-library(tidyr)
-library(dplyr)
-library(broom)
-library(tibble) 
+library(dplyr)  # Data manipulation
+library(purrr)  # Functional programming tools
+library(readr)   # Reading and writing CSV files
+library(broom)   # Tidying model outputs
+
 
 
 sindex <- read.csv("sindex_results.csv", sep=",", dec=".")
@@ -46,8 +38,6 @@ nested_data <- sindex_filt %>%
   nest()
 
 # Step 2: Fit linear models for each combination and tidy the output
-
-
 model_summaries <- nested_data %>%
   mutate(models = map(data, ~{
     # Omit NAs and remove Inf/-Inf values
@@ -56,7 +46,7 @@ model_summaries <- nested_data %>%
       filter(!is.infinite(SINDEX))
     
     if (nrow(cleaned_data) > 0) {
-      lm(SINDEX ~ M_YEAR, data = cleaned_data)
+      lm(log(SINDEX + 1) ~ M_YEAR, data = cleaned_data)
     } else {
       return(NULL)  # Returning NULL for groups with no valid data
     }
@@ -77,6 +67,11 @@ estimate_summary <- tidy_summaries %>%
 # This will give you a tibble with SPECIES, SITE_ID, the estimate of the slope (M_YEAR),
 # and its standard error for each SPECIES*SITE_ID combination.
 print(estimate_summary)
+
+file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends.csv"
+
+# Save the estimate_summary tibble as a CSV file
+write_csv(estimate_summary, file_path)
 
 
 
