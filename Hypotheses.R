@@ -11,7 +11,7 @@
     # urb_trends are calculated at 4 different scales: 100*100m; 500*500m; 1000*1000m; and 2000*2000m. All models will be replicated at these four scales to test variability in model results.
     # To calculate urb_trends we followed the following process (see "urbanisation trends.R" lines 75-168): 
       #1. Modelize urbanisation from 1975 to 2025, with available data at intervals of 5 years, using four different model types: linear; polynomial, exponential and logarithmic.
-      #2. Select the model with the lowest AIC and predict the urbanisation for the years corresponding to the species*site temporal series.
+      #2. Select the model with the lowest AIC and predict the urbanisation for the years corresponding to the species*site temporal series: 99.3% exponential; 0.7% linear.
       #3. Calculate the linear slope for the subset of years. *If the best model in step 2 was the linear model, then slope of 1975-2025 will be equal to the slope for the subset years.
 
 # Random factors
