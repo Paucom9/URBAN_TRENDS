@@ -5,6 +5,7 @@ rm(list = ls())
 library(dplyr)
 library(broom)
 library(data.table)
+library(tidyr)
 
 # --- Read and manage built data --- #
 setwd("D:/URBAN TRENDS/Urbanisation data") 
@@ -29,11 +30,11 @@ built_ubms <- built_ubms %>%
   )
 
 built_ubms <- built_ubms %>%
-  select(-transect_l)  # Remove the 'transect_l' column
+  dplyr::select(-transect_l)  # Remove the 'transect_l' column
 
 built_ubms <- built_ubms %>%
   mutate(bms_id = "ES_uBMS") %>% # Add the bms_id column with all values set to "ES_uBMS"
-  select(bms_id, longitude, latitude, everything()) # Reorder column
+  dplyr::select(bms_id, longitude, latitude, everything()) # Reorder column
 
 # rbind ebms and ubms files
 
@@ -60,10 +61,6 @@ built_long <- built_long %>%
 # Ensure that 'transect_id' and 'bms_id' are factors
 built_long$transect_id <- factor(built_long$transect_id)
 built_long$bms_id <- factor(built_long$bms_id)
-
-# Filter by a specific variable
-built_dt <- built_long %>%
-  filter(variable == "sum_2000m")
 
 # Remove NA values
 built_dt <- na.omit(built_dt)
@@ -131,8 +128,8 @@ for(variable in unique_variables) {
     # Check if there's enough data to fit the model
     if(nrow(subset_data) > 1) {
       # Fit the four models
-      linear_model <- lm(value_scaled ~ year, data = subset_data)
-      polynomial_model <- lm(value_scaled ~ poly(year, 2), data = subset_data)
+      linear_model <- lm(value ~ year, data = subset_data)
+      polynomial_model <- lm(value ~ poly(year, 2), data = subset_data)
       exponential_model <- lm(log(value + 1) ~ year, data = subset_data)
       logarithmic_model <- lm(value ~ log(year), data = subset_data)
       
@@ -165,7 +162,7 @@ for(variable in unique_variables) {
 
 # Check the first few rows of the summary
 head(urb_trends_all_df)
-
+hist(urb_trends_all_df$urb_trend)
 
 write.csv(urb_trends_all_df, "D:/URBAN TRENDS/Urbanisation data/urb_trends.csv", row.names = FALSE)
 
@@ -289,6 +286,9 @@ mod_str_yr <- mod_str_yr %>%
     code_urban == 10 ~ "WATER",
     TRUE ~ "UNKNOWN"  # This line handles any codes that don't match the above conditions
   ))
+
+mod_str_yr <- mod_str_yr[!duplicated(mod_str_yr), ]
+
 
 write.csv(mod_str_yr, "D:/URBAN TRENDS/Urbanisation data/mod_str_yr.csv", row.names = FALSE)
 
