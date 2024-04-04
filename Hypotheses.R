@@ -30,7 +30,8 @@
     # *Maybe delete sites of underrepresented climate regions (<1%)?
 
 # Species traits interacting with urbanization trends
-  #1. "HSI": Quantitative measure of hostplant specialization (Middleton-Weeling et al. 2020) ---> TROPHIC SPECIALIZATION
+  #1. "HSI": Quantitative measure of hostplant specialization (Middleton-Weeling et al. 2020). ---> TROPHIC SPECIALIZATION
+  # Hostplant index ranges from 0 for species which are highly polyphagous to 1 for species that are completely monophagous.  
     #Other possible variables measuring trophic specialization: Number of adult food types (1-8: herbs, ergot, shrub/tree flower, honeydew, sap, decaying plant, animal, mineral)
   #2. "WIn": Wing index. Composite variable representing a single measurement of overall size generated from forewing length and wingspan measures (Middleton-Weeling et al. 2020). ---> MOBILITY
   #3 "temp.mean". The mean temperature within the species range (Schweiger et al. 2014) ---> CLIMATE NICHE POSITION
@@ -48,7 +49,7 @@ library(glmmTMB)
 library(DHARMa)
 
 # Variables preparation
-final_df$inverse_variance_weights <- log(1/(final_df$std.error))
+final_df$inverse_variance_weights <- log(1/(final_df$std.error)) #Calculate log inverse of the variance (the higher value the higher precision of the estimate)
 final_df$estimate <- as.numeric(final_df$estimate)
 final_df$urb_trend <- as.numeric(final_df$urb_trend)
 final_df$HSI <- as.numeric(final_df$HSI)
@@ -59,74 +60,141 @@ final_df$SPECIES <- as.factor(final_df$SPECIES)
 final_df$Country.Name <- as.factor(final_df$Country.Name)
 final_df$urban_names <- as.factor(final_df$urban_names)
 final_df$genzname <- as.factor(final_df$genzname)
+final_df <- final_df %>%  # Create a binomial variable for urban_names
+  mutate(urban_type = case_when(
+    urban_names %in% c("URBAN CENTRE", "SUBURBAN OR PERI-URBAN", "DENSE URBAN CLUSTER", "SEMI-DENSE URBAN CLUSTER") ~ "urban",
+    urban_names %in% c("LOW DENSITY RURAL", "VERY LOW DENSITY RURAL", "RURAL CLUSTER GRID") ~ "rural",
+    TRUE ~ NA_character_ # Handles <NA> values or any other unexpected cases
+  ))
 
 
+# Variables transformation
+  # Check normality of the response variable
+  hist(final_df$estimate)
+  qqnorm(final_df$estimate); qqline(final_df$estimate) # No transformation (logarithmic, square root, inverse, Box-Cox) succeeded in enhancing normality.
+  # Check normality of the main predictor
+  hist(final_df$urb_trend) # Left-skewed
+  qqnorm(final_df$urb_trend); qqline(final_df$urb_trend) 
+  final_df$urb_trend_sqrt <- sqrt(final_df$urb_trend - min(final_df$urb_trend)) # Square root transformation
+  hist(final_df$urb_trend_sqrt)
+  qqnorm(final_df$urb_trend_sqrt); qqline(final_df$urb_trend_sqrt) # Normality increased with sqrt transformation
+  
+  
+# ***** urb_trends in final_df are calculated at the 2000x2000 scale. Repeat models at other different scales (100x100, 500x500, 1000x1000)
+  
 # - H1: There is a consistent association across species, sites, and regions between increased urbanization trends and more significant negative impacts on butterfly populations. - #
 
-mod_h1 <- glmmTMB(estimate ~ urb_trend  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+mod_h1 <- glmmTMB(estimate ~ urb_trend_sqrt  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                     data = final_df,
                     weights = inverse_variance_weights,
                     family = gaussian)
 
-summary(mod_h1)
+
+summary(mod_h1) # Marginal negative effect of urbanization
 sim_res <- simulateResiduals(fittedModel = mod_h1)
-testUniformity(sim_res)
-testDispersion(sim_res)
+testUniformity(sim_res) # No normality of the residuals
+testDispersion(sim_res) # OK
 plot(sim_res)
 
 
 # - H2: The effect of urbanisation interact with the type of site. The effect of urbanisation is more negative in rural populations than in urban populations. - #
   # If this interaction is significant consider conducting models with triple interaction urb_trend*urban_name*trait
 
-mod_h2 <- glmmTMB(estimate ~ urb_trend*urban_names  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+mod_h2a <- glmmTMB(estimate ~ urb_trend_sqrt*urban_names  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                   data = final_df,
                   weights = inverse_variance_weights,
                   family = gaussian)
 
-summary(mod_h2)
+summary(mod_h2a) 
+sim_res <- simulateResiduals(fittedModel = mod_h2a)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
+
+
+mod_h2b <- glmmTMB(estimate ~ urb_trend_sqrt*urban_type  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+                   data = final_df,
+                   weights = inverse_variance_weights,
+                   family = gaussian)
+
+summary(mod_h2b) # Marginal negative effect of urbanization
+sim_res <- simulateResiduals(fittedModel = mod_h2b)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
+
 
 
 # - H3: The impact of urbanization on butterfly populations varies depending on the type of site, with rural populations experiencing more negative effects from urbanization than urban populations. - #
 # Urban environments in warmer regions are less tolerable to butterflies compared to those in colder regions.
 
-mod_h3 <- glmmTMB(estimate ~ urb_trend*genzname  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+mod_h3 <- glmmTMB(estimate ~ urb_trend_sqrt*genzname  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                   data = final_df,
                   weights = inverse_variance_weights,
                   family = gaussian)
 
-summary(mod_h3) #Model convergence problem
+summary(mod_h3) # Marginal negative effect of urbanization; significant differences of population trends among climate regions
+sim_res <- simulateResiduals(fittedModel = mod_h3)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
 
 # - H4: Given that host plant specialization has been negatively associated with urban affinity (Callaghan et al. 2021), it is expected that more specialized butterfly species will experience more negative population trends due to urbanization compared to generalist species. - #
 
-mod_h4 <- glmmTMB(estimate ~ urb_trend*HSI  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+# *Revise possible transformations of HSI
+hist(final_df$HSI) #Left-skewed
+
+mod_h4 <- glmmTMB(estimate ~ urb_trend_sqrt*HSI  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                   data = final_df,
                   weights = inverse_variance_weights,
                   family = gaussian)
 
-summary(mod_h4)
+summary(mod_h4) # Significant effect of HSI (Counterintuitively monophagous species decline more); 
+                # Significant interaction between urbanization and HSI: the negative impact of urbanization on butterfly trends is amplified at higher levels of HSI.
+sim_res <- simulateResiduals(fittedModel = mod_h4)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
 
 
 # - H5: Given that wing index (used as proxy of mobility/dispersal capacity) has been positively associated with urban affinity (Callaghan et al. 2021), it is expected that species with low disperal capacity will experience more negative population trends due to urbanization compared to more mobile species. - #
 
-mod_h5 <- glmmTMB(estimate ~ urb_trend*WIn  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+# *Revise possible transformations of WIn
+hist(final_df$WIn)
+
+mod_h5 <- glmmTMB(estimate ~ urb_trend_sqrt*WIn  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                   data = final_df,
                   weights = inverse_variance_weights,
                   family = gaussian)
 
-summary(mod_h5)
+summary(mod_h5) # Marginal effect of urbanization; Significant effect of wing size (the larger the species, the more positive trend); 
+                # Significant interaction between urbanization and body size: as wing size increases, the negative impact of urbanization on butterfly trends is magnified.
+sim_res <- simulateResiduals(fittedModel = mod_h5)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
 
 
-# - H6: Given that the mean temperature in rangge has been positively associated with urban affinity (Callaghan et al. 2021), species adapted to low temperatures are expected to experience more negative population trends due to urbanization compared to species that prefer warmer, thermophilic conditions. - #
+# - H6: Given that the mean temperature in range has been positively associated with urban affinity (Callaghan et al. 2021), species adapted to low temperatures are expected to experience more negative population trends due to urbanization compared to species that prefer warmer, thermophilic conditions. - #
+
+hist(final_df$temp.mean) # OK
 
 mod_h6 <- glmmTMB(estimate ~ urb_trend*temp.mean  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                   data = final_df,
                   weights = inverse_variance_weights,
                   family = gaussian)
 
-summary(mod_h6)
+summary(mod_h6) # Significant effect of mean temperature (thermophil species have more positive trends)
+sim_res <- simulateResiduals(fittedModel = mod_h6)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
 
 
 # - H7: Species that exhibit a wider climate niche breadth will be less affected by urbanization compared to species with a narrower climate niche breadth. - #
+
+# *Revise possible transformations of temp.sd
+hist(final_df$temp.sd) # Right-skewed
 
 mod_h7 <- glmmTMB(estimate ~ urb_trend*temp.sd  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                   data = final_df,
@@ -134,6 +202,11 @@ mod_h7 <- glmmTMB(estimate ~ urb_trend*temp.sd  + (1|SPECIES) + (1| Country.Name
                   family = gaussian)
 
 
-summary(mod_h7)
+summary(mod_h7) # Significant effect of urbanization; Significant effect of climate niche breadth (Counterintuitively species with greater niche breadth decline more)
+                # Significant interaction among urbanization and climate niche breadth: as climate niche breadth increases, the negative impact of urbanization on population trend is lessened.
+sim_res <- simulateResiduals(fittedModel = mod_h7)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
 
 
