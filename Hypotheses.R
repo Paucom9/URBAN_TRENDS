@@ -37,7 +37,8 @@
   #3 "temp.mean". The mean temperature within the species range (Schweiger et al. 2014) ---> CLIMATE NICHE POSITION
     #Consider using temp.max/temp.min depending on the hypotheses ---> Upper/Lower climatic limit
   #4. "temp.sd". Standard deviation of temperature across the species range (Schweiger et al. 2014) ---> CLIMATE NICHE BREADTH
-    # Alternatively "range.ann.temp": annual range in monthly temperature (warmest month - coldest month) or "FMo_Average": Average number of months of the year a species is observed flying can be also used as proxy of thermal tolerance.
+    # Alternatively "range.ann.temp": annual range in monthly temperature (warmest month - coldest month) or 
+  #5."FMo_Average": Average number of months of the year a species is observed flying as a proxy of voltinism.*In Callaghan et al. 2021 FMo_Average is considered a proxy of thermal tolerance.
 
 #Weights: Logarithm of the inverse of the variance (log(1/std.error)). Trends with higher precision are weighted more heavily than those with greater uncertainty.
 
@@ -209,4 +210,23 @@ testUniformity(sim_res)
 testDispersion(sim_res)
 plot(sim_res)
 
+# - H8: In the last decades multivoltine butterflies have had more positive long-term population trends than univoltine species (Colom et al. 2022; Macgregor et al. 2019; Michielini et al. 2021; Wepprich et al. 2019).
+# Long-term population trends are positively correlated with increasing voltinism over time (Wepprich et al. 2024 in revision), suggesting that the addition of generations in multivoltine species can be a mechanism of adaption
+# to climate change/urbanization in contrast to inflexible univoltine species - # 
+
+# *Revise possible transformations of FMo_Average
+hist(final_df$FMo_Average)
+
+mod_h8 <- glmmTMB(estimate ~ urb_trend*$ FMo_Average  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
+                  data = final_df,
+                  weights = inverse_variance_weights,
+                  family = gaussian)
+
+
+summary(mod_h8) # Significant effect of urbanization; Significant effect of mean flight months (the higher the voltinism the higher positive trend)
+                # Significant interaction among urbanization and mean flight months: for species with more generations per year (higher FMo_Average), the negative impact of urbanization is moderated or less severe than for species with a unique or few generations per year.
+sim_res <- simulateResiduals(fittedModel = mod_h8)
+testUniformity(sim_res)
+testDispersion(sim_res)
+plot(sim_res)
 
