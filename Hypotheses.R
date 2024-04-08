@@ -5,7 +5,7 @@
     # Structure of the linear model to calculate estimates (see "Butterfly population trends.R"): log(sindex + 1) ~ year, correlation = corAR1(form = ~ centered_year)
 
 # Main predictor
-  #"urb_trend": Slop of the temporal trend of urbanization (built-up fraction) at site level associated to a specific temporal series (species*site combination).
+  #"urb_trend": Slope of the temporal trend of urbanization (built-up fraction) at site level associated to a specific temporal series (species*site combination).
     # urb_trends are calculated at 4 different scales: 100*100m; 500*500m; 1000*1000m; and 2000*2000m. All models will be replicated at these four scales to test variability in model results.
     # To calculate urb_trends we followed the following process (see "urbanization trends.R" lines 75-168): 
       #1. Modeling urbanization from 1975 to 2025, with available data at intervals of 5 years, using four different model types: linear; polynomial, exponential and logarithmic.
@@ -39,6 +39,15 @@
     # Alternatively "range.ann.temp": annual range in monthly temperature (warmest month - coldest month) or 
   #5."FMo_Average": Average number of months of the year a species is observed flying as a proxy of voltinism.*In Callaghan et al. 2021 FMo_Average is considered a proxy of thermal tolerance.
 
+# Climate trends
+    # Slope of the temporal trend of each climate variab at site level associated to a specific temporal series (species*site combination).
+      # "bio1": Mean annual temperature
+      # "bio4": Temperature seasonality
+      # "bio12": Mean annual precipitation
+      # "bio15": Precipitation seasonality
+      # "GDD5": Degree-days above 5°C, growing degree-days
+      # "DMA": 	De Martonne aridity index. (Mean annual precip.)/(Mean annual temp. + Mean temperature of the warmest quarter) + 12*Precipitation of the driest month/(Mean temperature of the driest month)) / 2
+
 #Weights: Logarithm of the inverse of the variance (log(1/std.error)). Trends with higher precision are weighted more heavily than those with greater uncertainty.
 
 
@@ -58,6 +67,12 @@ final_df$HSI <- as.numeric(final_df$HSI)
 final_df$WIn <- as.numeric(final_df$WIn)
 final_df$temp.mean <- as.numeric(final_df$temp.mean)
 final_df$temp.sd <- as.numeric(final_df$temp.sd)
+final_df$bio1 <- as.numeric(final_df$bio1)
+final_df$bio4 <- as.numeric(final_df$bio4)
+final_df$bio12 <- as.numeric(final_df$bio12)
+final_df$bio15 <- as.numeric(final_df$bio15)
+final_df$GDD5 <- as.numeric(final_df$GDD5)
+final_df$DMA <- as.numeric(final_df$DMA)
 final_df$SPECIES <- as.factor(final_df$SPECIES)
 final_df$Country.Name <- as.factor(final_df$Country.Name)
 final_df$urban_names <- as.factor(final_df$urban_names)
@@ -114,12 +129,14 @@ testDispersion(sim_res)
 plot(sim_res)
 
 
+ # urban_names = all urban type categories; Urban type = urban vs. rural 
 mod_h2b <- glmmTMB(estimate ~ urb_trend_sqrt*urban_type  + (1|SPECIES) + (1| Country.Name / SITE_ID), 
                    data = final_df,
                    weights = inverse_variance_weights,
                    family = gaussian)
 
-summary(mod_h2b) # Marginal negative effect of urbanization
+summary(mod_h2b) # Marginal negative effect of urbanization;
+                # Marginal significant interaction among urbanization and site type: the impact of urbanization on species abundance trends is more positive in urban areas than in rural areas.
 sim_res <- simulateResiduals(fittedModel = mod_h2b)
 testUniformity(sim_res)
 testDispersion(sim_res)
