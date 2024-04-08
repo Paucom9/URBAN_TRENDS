@@ -8,6 +8,8 @@ library(data.table)
 library(tidyr)
 
 # --- Read and manage built data --- #
+
+# ----
 setwd("D:/URBAN TRENDS/Urbanisation data") 
 
 # Total built-up surface
@@ -62,13 +64,21 @@ built_long <- built_long %>%
 built_long$transect_id <- factor(built_long$transect_id)
 built_long$bms_id <- factor(built_long$bms_id)
 
+# Transform to a data table
+built_dt <- data.table(built_long)
+
 # Remove NA values
 built_dt <- na.omit(built_dt)
 
 # Standardizing the 'value' variable
 built_dt$value_scaled <- scale(built_dt$value)
 
+# ----
+
+
 # --- Identify the temporal series of each species-site combination of sindex_results --- #
+
+# ----
 
 setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
@@ -97,7 +107,10 @@ sindex_yrs <- sindex_df %>%
 sindex_yrs <- sindex_yrs %>%
   filter(N_YEARS >= 8, Sp_YEARS >= 0.5)
 
+# ----
+
 # --- Loop to calculate for each species*site the associated urbanisation trend --- #
+# ----
 
 # Initialize an empty data frame to store the summary information for all variables
 urb_trends_all_df <- data.frame(SPECIES = character(),
@@ -167,8 +180,82 @@ hist(urb_trends_all_df$urb_trend)
 write.csv(urb_trends_all_df, "D:/URBAN TRENDS/Urbanisation data/urb_trends.csv", row.names = FALSE)
 
 
+#  --- Interpolate year data of built-up fraction using exponential models  --- #
+# ----
+
+# --- Predict year data using exponential models ---#
+# ----
+head(built_dt)
+
+# Assuming built_dt is your dataset
+
+# Convert year to numeric
+built_dt[, year := as.numeric(year)]
+
+# Create an empty list to store predictions
+predictions_list <- list()
+
+# Iterate over unique combinations of transect_id and variable
+for (i in 1:nrow(unique_combinations)) {
+  # Get current combination
+  transect_id <- unique_combinations$transect_id[i]
+  variable <- unique_combinations$variable[i]
+  
+  # Subset data for the current combination
+  subset_data <- built_dt[transect_id == unique_combinations$transect_id[i] & 
+                            variable == unique_combinations$variable[i], ]
+  
+  # Remove rows with NA or zero values
+  subset_data <- subset_data[!is.na(value)]
+  
+  # Check if there are at least 3 data points for modeling
+  if (nrow(subset_data) > 2) {
+    # Fit exponential model
+    fit <- lm(log(value + 1) ~ year, data = subset_data)
+    
+    # Predict values for the years 1975 to 2025
+    year_range <- 1975:2025
+    predictions <- data.frame(year = year_range,
+                              predictions = exp(predict(fit, newdata = data.frame(year = year_range))))
+    
+    # Add transect_id and variable columns to predictions
+    predictions <- data.table(predictions)
+    predictions[, c("transect_id", "variable") := list(transect_id, variable)]
+    
+    # Store predictions in the list
+    predictions_list[[i]] <- predictions
+  } else {
+    # Create a data table with NA values if there are insufficient data points
+    predictions <- data.table(year = 1975:2025, predictions = rep(NA, 51))
+    predictions[, c("transect_id", "variable") := list(transect_id, variable)]
+    
+    # Store NA predictions in the list
+    predictions_list[[i]] <- predictions
+  }
+  
+  # Update progress bar
+  setTxtProgressBar(pb, i)
+}
+
+# Close progress bar
+close(pb)
+
+# Combine predictions from the list into a single data table
+predictions <- rbindlist(predictions_list, fill = TRUE)
+
+
+# View the predictions
+head(predictions)
+
+write.csv(predictions, "D:/URBAN TRENDS/Urbanisation data/urban_year_data.csv", row.names = FALSE)
+
+
+
+# ----
 
 # --- Read and manage MOD data --- #
+# ----
+
 
 setwd("D:/URBAN TRENDS/Urbanisation data") 
 mod_ebms <- read.csv("embs_ubms_GHS_MOD_stats.csv", sep = ";", dec = ".")
@@ -190,21 +277,23 @@ mod_ubms <- mod_ubms %>%
   )
 
 mod_ubms <- mod_ubms %>%
-  select(-transect_l)  # Remove the 'transect_l' column
+  dplyr::select(-transect_l)  # Remove the 'transect_l' column
 
 mod_ubms <- mod_ubms %>%
   mutate(bms_id = "ES-uBMS") %>% # Add the bms_id column with all values set to "ES_uBMS"
-  select(bms_id, longitude, latitude, everything()) # Reorder column
+  dplyr::select(bms_id, longitude, latitude, everything()) # Reorder column
 
 # rbind ebms and ubms files
 
 mod_df <- rbind(mod_ebms, mod_ubms)
 
 head(mod_df)
+str(mod_df)
 
-
+# ----
 
 # --- In how many sites the mod category change during the time series? --- #
+# ----
 
 # Select only the 'point_year' columns
 point_cols <- mod_df[, grepl("^point_", names(mod_df))]
@@ -220,11 +309,10 @@ num_rows_with_changes <- sum(rows_with_changes, na.rm = TRUE)
 
 # Percentage of sites that changed the category
 percent_rows <- num_rows_with_changes/nrow(mod_df) * 100
+# ----
 
-
-
-# --- Select the mod category at the STR_YEAR --- #
-
+# --- Select the MOD category at the STR_YEAR for each SPECIES*SITE_ID temporal series --- #
+# ----
 head(mod_df)
 head(sindex_yrs)
 
@@ -271,11 +359,9 @@ sindex_yrs$point <- points
 head(sindex_yrs)
 
 mod_str_yr <- sindex_yrs %>%
-  select(SITE_ID, code_urban = point)
-
-# Now, create a new column 'urban_names' with the mappings
-mod_str_yr <- mod_str_yr %>%
-  mutate(urban_names = case_when(
+  dplyr::select(SPECIES, SITE_ID, code_urban = point) %>%
+  dplyr::group_by(SPECIES, SITE_ID) %>% # Ensure we respect the unique combinations
+  dplyr::mutate(urban_names = case_when(
     code_urban == 30 ~ "URBAN CENTRE",
     code_urban == 23 ~ "DENSE URBAN CLUSTER",
     code_urban == 22 ~ "SEMI-DENSE URBAN CLUSTER",
@@ -285,13 +371,13 @@ mod_str_yr <- mod_str_yr %>%
     code_urban == 11 ~ "VERY LOW DENSITY RURAL",
     code_urban == 10 ~ "WATER",
     TRUE ~ "UNKNOWN"  # This line handles any codes that don't match the above conditions
-  ))
-
-mod_str_yr <- mod_str_yr[!duplicated(mod_str_yr), ]
+  )) %>%
+  dplyr::ungroup()
 
 
 write.csv(mod_str_yr, "D:/URBAN TRENDS/Urbanisation data/mod_str_yr.csv", row.names = FALSE)
 
+# ----
 
 
 
