@@ -2,8 +2,7 @@
 
 # Response variable
   #"estimate": Slope of the population (species*site) abundance (sindex) temporal trends (temporal series >= 8 years with positive values of at least half of the years) considering temporal autocorrelation.
-    # Structure of the linear model to calculate estimates (see "Butterfly population trends.R"): centered_log_sindex* ~ centered_year*, correlation = corAR1(form = ~ centered_year)
-      #*We centre the year and abundances of each population time series at zero (subtracting each year by the mean year in each population, and subtracting the log of each abundance by the mean log abundance value in each population). 
+    # Structure of the linear model to calculate estimates (see "Butterfly population trends.R"): log(sindex + 1) ~ year, correlation = corAR1(form = ~ centered_year)
 
 # Main predictor
   #"urb_trend": Slop of the temporal trend of urbanization (built-up fraction) at site level associated to a specific temporal series (species*site combination).
