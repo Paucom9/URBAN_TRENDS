@@ -1,7 +1,7 @@
 #  --- Variables --- # 
 
 # Response variable
-  #"estimate": Slope of the population (species*site) abundance (sindex) temporal trends (temporal series >= 8 years with positive values of at least half of the yars) considering temporal autocorrelation.
+  #"estimate": Slope of the population (species*site) abundance (sindex) temporal trends (temporal series >= 8 years with positive values of at least half of the years) considering temporal autocorrelation.
     # Structure of the linear model to calculate estimates (see "Butterfly population trends.R"): centered_log_sindex* ~ centered_year*, correlation = corAR1(form = ~ centered_year)
       #*We centre the year and abundances of each population time series at zero (subtracting each year by the mean year in each population, and subtracting the log of each abundance by the mean log abundance value in each population). 
 
@@ -48,6 +48,8 @@
 # Libraries required
 library(glmmTMB)
 library(DHARMa)
+
+final_df <- read_csv("final_df.csv")
 
 # Variables preparation
 final_df$inverse_variance_weights <- log(1/(final_df$std.error)) #Calculate log inverse of the variance (the higher value the higher precision of the estimate)
