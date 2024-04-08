@@ -2,15 +2,13 @@
 rm(list=ls())
 setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
-#Libraries
-library(dplyr)
-library(tidyr)
-library(purrr)
-library(nlme)
-library(broom)
-library(broom.mixed)
-library(readr)
+#Libraries required
+library(dplyr) # For data manipulation tasks like filtering, grouping, and summarizing
+library(nlme) # For fitting the generalized least squares (GLS) models with gls function with the temporal correlation structure
+library(broom) # To convert statistical analysis objects from R into tidy format using tidy function
+library(readr) # For reading CSV files into R with read.csv
 
+# Data
 sindex <- read.csv("sindex_results.csv", sep=",", dec=".")
 head(sindex)
 
@@ -30,58 +28,84 @@ sindex_filt <- sindex %>%
 
 head(sindex_filt)
 
-
-# Adjusting the dataset before nesting
-# Step 0: Center the data by SPECIES and SITE_ID
+# Calculate log_sindex
 sindex_filt <- sindex_filt %>%
   group_by(SPECIES, SITE_ID) %>%
-  mutate(centered_year = M_YEAR - mean(M_YEAR),
-         log_sindex = log(SINDEX + 1),
-         centered_log_sindex = log_sindex - mean(log_sindex)) %>%
-  ungroup()  # Ensuring we return to the standard dataframe structure
+  mutate(log_sindex = log(SINDEX + 1)) %>%  
+  ungroup()  
 
-# Step 1: Nest the centered data by SPECIES and SITE_ID
-nested_data <- sindex_filt %>%
-  group_by(SPECIES, SITE_ID) %>%
-  nest()
+# Initialize an empty list to store model summaries
+model_summaries_list <- list()
 
-# Step 2: Fit generalized least squares models for each combination and tidy the output
-model_summaries <- nested_data %>%
-  mutate(models = map(data, ~{
-    # Ensure there's more than one row for gls to work
-    if (nrow(.x) > 1) { 
-      tryCatch({
-        gls_model <- gls(centered_log_sindex ~ centered_year, data = .x,
-                         correlation = corAR1(form = ~ centered_year))
-        return(tidy(gls_model))
-      }, error = function(e) {
-        warning(sprintf("Model failed for SPECIES = '%s' and SITE_ID = '%s': %s",
-                        .x$SPECIES[1], .x$SITE_ID[1], e$message))
-        return(NULL)  # Return NULL if an error occurs, with a warning
-      })
-    } else {
-      return(NULL)  # Returning NULL for groups with no valid data
+# Create a unique ID for each combination of SPECIES and SITE_ID for iteration
+sindex_filt$group_id <- with(sindex_filt, interaction(SPECIES, SITE_ID, drop = TRUE))
+
+# Remove "Inf" values
+sindex_filt <- sindex_filt %>%
+  filter(!is.infinite(log_sindex))
+
+# Get a vector of unique group IDs
+unique_group_ids <- unique(sindex_filt$group_id)
+
+# Loop through each unique group ID to calculate population trends
+for(group_id in unique_group_ids) {
+  # Subset the data for the current group
+  data_subset <- sindex_filt[sindex_filt$group_id == group_id, ]
+  
+  # Check if there's enough data for modeling
+  if(nrow(data_subset) > 1) {
+    tryCatch({
+      # Attempt to fit the GLS model with correlation structure
+      gls_model <- gls(log_sindex ~ M_YEAR, data = data_subset,
+                       correlation = corAR1(form = ~ M_YEAR))
+      model_summary <- tidy(gls_model)
+    }, error = function(e) {
+      # Check if the error is due to convergence issues
+      if(grepl("false convergence \\(8\\)", e$message) | grepl("singular convergence \\(7\\)", e$message)) {
+        # Attempt to fit a simpler GLS model without the correlation structure
+        message(sprintf("Fitting simpler model for group_id = '%s' due to convergence issue.", group_id))
+        tryCatch({
+          gls_model <- gls(log_sindex ~ M_YEAR, data = data_subset)
+          model_summary <- tidy(gls_model)
+        }, error = function(e) {
+          message(sprintf("Simpler model also failed for group_id = '%s': %s", group_id, e$message))
+          model_summary <- NULL
+        })
+      } else {
+        message(sprintf("Model failed for group_id = '%s': %s", group_id, e$message))
+        model_summary <- NULL
+      }
+    })
+    
+    if(!is.null(model_summary)) {
+      # Add back SPECIES, SITE_ID, and group_id to the model summary if the model was successful
+      model_summary$SPECIES <- unique(data_subset$SPECIES)
+      model_summary$SITE_ID <- unique(data_subset$SITE_ID)
+      model_summary$group_id <- group_id
+      
+      # Append the model summary to the list
+      model_summaries_list[[as.character(group_id)]] <- model_summary
     }
-  })) %>%
-  select(SPECIES, SITE_ID, models)
+  } else {
+    message(sprintf("Not enough data for group_id = '%s'", group_id))
+  }
+}
 
-# Step 3: Extract and unnest the summaries
-model_summaries <- model_summaries %>%
-  unnest(models)
+# Combine all model summaries into one dataframe
+model_summaries <- do.call(rbind, model_summaries_list)
 
-# Step 4: Filter for the estimate of M_YEAR only and select required columns
+# Filter for the estimate of M_YEAR only and select required columns
 estimate_summary <- model_summaries %>%
-  filter(term == "centered_year") %>%
+  filter(term == "M_YEAR") %>%
   select(SPECIES, SITE_ID, estimate, std.error)
 
-# This will give you a tibble with SPECIES, SITE_ID, the estimate of the slope (M_YEAR),
-# and its standard error for each SPECIES*SITE_ID combination.
+# Show results
 print(estimate_summary)
 
+# Save results
 file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends.csv"
-
-# Save the estimate_summary tibble as a CSV file
 write_csv(estimate_summary, file_path)
+
 
 
 
