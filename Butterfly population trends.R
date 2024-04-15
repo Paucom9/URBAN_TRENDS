@@ -34,21 +34,29 @@ sindex_filt <- sindex_filt %>%
   mutate(log_sindex = log(SINDEX + 1)) %>%  
   ungroup()  
 
+# Remove "Inf" values
+sindex_filt <- sindex_filt %>%
+  filter(!is.infinite(log_sindex))
+
 # Initialize an empty list to store model summaries
 model_summaries_list <- list()
 
 # Create a unique ID for each combination of SPECIES and SITE_ID for iteration
 sindex_filt$group_id <- with(sindex_filt, interaction(SPECIES, SITE_ID, drop = TRUE))
 
-# Remove "Inf" values
-sindex_filt <- sindex_filt %>%
-  filter(!is.infinite(log_sindex))
-
 # Get a vector of unique group IDs
 unique_group_ids <- unique(sindex_filt$group_id)
 
+# Initialize progress bar
+pb <- txtProgressBar(min = 0, max = length(unique_group_ids), style = 3)
+progress <- 0
+
 # Loop through each unique group ID to calculate population trends
 for(group_id in unique_group_ids) {
+  # Update progress bar
+  progress <- progress + 1
+  setTxtProgressBar(pb, progress)
+  
   # Subset the data for the current group
   data_subset <- sindex_filt[sindex_filt$group_id == group_id, ]
   
@@ -91,6 +99,9 @@ for(group_id in unique_group_ids) {
   }
 }
 
+# Close the progress bar
+close(pb)
+
 # Combine all model summaries into one dataframe
 model_summaries <- do.call(rbind, model_summaries_list)
 
@@ -101,6 +112,7 @@ estimate_summary <- model_summaries %>%
 
 # Show results
 print(estimate_summary)
+hist(estimate_summary$estimate)
 
 # Save results
 file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends.csv"
