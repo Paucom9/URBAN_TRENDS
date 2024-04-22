@@ -223,4 +223,3 @@ find_region <- function(lat) {
   if (length(region) == 0) return(NA)
   return(region)
 }
-
