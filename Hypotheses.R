@@ -57,7 +57,7 @@
 library(glmmTMB)
 library(DHARMa)
 
-final_df <- read_csv("final_df.csv")
+final_df <- read.csv("final_df.csv")
 
 # Variables preparation
 final_df$inverse_variance_weights <- log(1/(final_df$std.error)) #Calculate log inverse of the variance (the higher value the higher precision of the estimate)
