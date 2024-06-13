@@ -248,7 +248,17 @@ predictions <- rbindlist(predictions_list, fill = TRUE)
 # View the predictions
 head(predictions)
 
-write.csv(predictions, "D:/URBAN TRENDS/Urbanisation data/urban_year_data.csv", row.names = FALSE)
+urban_year_data <- predictions %>%
+  pivot_wider(
+    id_cols = c(transect_id, year),
+    names_from = variable,
+    values_from = predictions
+  )
+
+# Rename the columns to match the desired format
+colnames(urban_year_data) <- c("SITE_ID","year","built_100", "built_500", "built_1000", "built_2000")
+
+write.csv(urban_year_data, "D:/URBAN TRENDS/Urbanisation data/urban_year_data.csv", row.names = FALSE)
 
 
 
