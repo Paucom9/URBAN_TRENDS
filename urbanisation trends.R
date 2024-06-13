@@ -6,11 +6,12 @@ library(dplyr)
 library(broom)
 library(data.table)
 library(tidyr)
+library(mgcv)
 
 # --- Read and manage built data --- #
 
 # ----
-setwd("D:/URBAN TRENDS/Urbanisation data") 
+setwd("E:/URBAN TRENDS/Urbanisation data") 
 
 # Total built-up surface
 built_ebms <- read.csv("embs_ubms_GHS_BUILT_stats.csv", sep = ";", dec = ".")
@@ -18,14 +19,14 @@ built_ubms <- read.csv("ubms_sites_GHS_BUILT.csv", sep = ";", dec = ".")
 
 # Rename columns
 built_ebms <- built_ebms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = geometry,
     latitude = geom1
   )
 
 built_ubms <- built_ubms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = transect_1,
     latitude = transect_2
@@ -80,7 +81,7 @@ built_dt$value_scaled <- scale(built_dt$value)
 
 # ----
 
-setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
 sindex_df <-read.csv("sindex_results.csv", sep=",", dec=".")
 
@@ -105,7 +106,7 @@ sindex_yrs <- sindex_df %>%
 # Filter by a minum number of years and year with positive values of sindex
 
 sindex_yrs <- sindex_yrs %>%
-  filter(N_YEARS >= 8, Sp_YEARS >= 0.5)
+  filter(N_YEARS >= 10, Sp_YEARS >= 0.5)
 
 # ----
 
@@ -183,7 +184,7 @@ write.csv(urb_trends_all_df, "D:/URBAN TRENDS/Urbanisation data/urb_trends.csv",
 #  --- Interpolate year data of built-up fraction using exponential models  --- #
 # ----
 
-# --- Predict year data using exponential models ---#
+# --- Predict year data using GAMs ---#
 # ----
 head(built_dt)
 
@@ -210,8 +211,8 @@ for (i in 1:nrow(unique_combinations)) {
   
   # Check if there are at least 3 data points for modeling
   if (nrow(subset_data) > 2) {
-    # Fit exponential model
-    fit <- lm(log(value + 1) ~ year, data = subset_data)
+    # Fit GAM model with a smooth term for 'year'
+    fit <- gam(value ~ s(year), data = subset_data)
     
     # Predict values for the years 1975 to 2025
     year_range <- 1975:2025
@@ -226,7 +227,7 @@ for (i in 1:nrow(unique_combinations)) {
     predictions_list[[i]] <- predictions
   } else {
     # Create a data table with NA values if there are insufficient data points
-    predictions <- data.table(year = 1975:2025, predictions = rep(NA, 51))
+    predictions <- data.table(year = 1975:2025, predictions = rep(NA, length(year_range)))
     predictions[, c("transect_id", "variable") := list(transect_id, variable)]
     
     # Store NA predictions in the list
@@ -257,7 +258,7 @@ write.csv(predictions, "D:/URBAN TRENDS/Urbanisation data/urban_year_data.csv", 
 # ----
 
 
-setwd("D:/URBAN TRENDS/Urbanisation data") 
+setwd("E:/URBAN TRENDS/Urbanisation data") 
 mod_ebms <- read.csv("embs_ubms_GHS_MOD_stats.csv", sep = ";", dec = ".")
 mod_ubms <- read.csv("ubms_sites_GHS_MOD.csv", sep = ";", dec = ".")
 

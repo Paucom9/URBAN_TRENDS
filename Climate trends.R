@@ -94,9 +94,10 @@ for (i in 1:nrow(sindex_yrs)) {
 
 # View the structure of the results data frame
 str(results_df)
+head(results_df)
 
 
-output_file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/ebms_coord_elevation_finalsites3.csv"
+output_file_path <- "D:/URBAN TRENDS/Climate data/climate_trends.csv"
 
 # Save the combined data table to the specified file
-fwrite(data_frame_2, output_file_path)
+fwrite(results_df, output_file_path)

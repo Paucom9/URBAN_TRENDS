@@ -2,7 +2,7 @@
 
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
-setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 setwd("/Users/SUITCASE/Documents/URBAN_TRENDS")
 
 # Load required libraries

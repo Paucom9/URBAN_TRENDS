@@ -1,6 +1,6 @@
 ## Clean enviroment and set directory to files
 rm(list=ls())
-setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
 
 #Libraries required
 library(dplyr) # For data manipulation tasks like filtering, grouping, and summarizing
@@ -17,7 +17,7 @@ head(sindex)
 sindex_filt <- sindex %>%
   group_by(SPECIES, SITE_ID, RCLIM) %>%
   # First, make sure that there are at least 10 different years of data
-  filter(n_distinct(M_YEAR) >= 8) %>%
+  filter(n_distinct(M_YEAR) >= 10) %>%
   # Then, for each group, calculate the percentage of years with SINDEX < 1
   mutate(porcentaje_bajo_1 = sum(SINDEX < 1, na.rm = TRUE) / n()) %>%
   # Filter to keep only those groups where less than half of the years have SINDEX < 1
@@ -66,7 +66,7 @@ for(group_id in unique_group_ids) {
       # Attempt to fit the GLS model with correlation structure
       gls_model <- gls(log_sindex ~ M_YEAR, data = data_subset,
                        correlation = corAR1(form = ~ M_YEAR))
-      model_summary <- tidy(gls_model)
+      model_summary <- summary(gls_model)
     }, error = function(e) {
       # Check if the error is due to convergence issues
       if(grepl("false convergence \\(8\\)", e$message) | grepl("singular convergence \\(7\\)", e$message)) {
@@ -74,7 +74,7 @@ for(group_id in unique_group_ids) {
         message(sprintf("Fitting simpler model for group_id = '%s' due to convergence issue.", group_id))
         tryCatch({
           gls_model <- gls(log_sindex ~ M_YEAR, data = data_subset)
-          model_summary <- tidy(gls_model)
+          model_summary <- summary(gls_model)
         }, error = function(e) {
           message(sprintf("Simpler model also failed for group_id = '%s': %s", group_id, e$message))
           model_summary <- NULL
@@ -102,21 +102,39 @@ for(group_id in unique_group_ids) {
 # Close the progress bar
 close(pb)
 
-# Combine all model summaries into one dataframe
-model_summaries <- do.call(rbind, model_summaries_list)
+# Initialize a list to store the estimate summaries
+estimate_summaries <- list()
 
-# Filter for the estimate of M_YEAR only and select required columns
-estimate_summary <- model_summaries %>%
-  filter(term == "M_YEAR") %>%
-  select(SPECIES, SITE_ID, estimate, std.error)
+# Iterate over each model summary
+for (group_id in names(model_summaries_list)) {
+  # Get the model summary
+  model_summary <- model_summaries_list[[group_id]]
+  
+  # Extract relevant estimates
+  estimate <- model_summary$coefficients["M_YEAR"]
+  std_error <-  model_summary$tTable["M_YEAR", "Std.Error"]
+  
+  # Store the estimates in the list
+  estimate_summaries[[group_id]] <- data.frame(
+    SPECIES = model_summary$SPECIES,
+    SITE_ID = model_summary$SITE_ID,
+    estimate = estimate,
+    std_error = std_error
+  )
+}
+
+# Combine all matrices into a single data frame
+estimate_summary <- do.call(rbind, estimate_summaries)
 
 # Show results
 print(estimate_summary)
 hist(estimate_summary$estimate)
 
 # Save results
-file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends.csv"
+file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends10.csv"
 write_csv(estimate_summary, file_path)
+
+
 
 
 

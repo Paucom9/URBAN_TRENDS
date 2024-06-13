@@ -5,6 +5,9 @@ library(sf)
 library(ggplot2)
 library(rnaturalearth)
 
+setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+
+
 #Data
 
 head(m_count)
@@ -48,13 +51,38 @@ points_transformed <- st_transform(points_sf, crs = 3035)
 # Extract the x coordinates after transformation
 xlims_transformed <- st_coordinates(points_transformed)[,1]
 
+library(sf)
+library(dplyr)
+
+# Latitude coordinates to transform
+latitudes <- c(28.07431, 44.91431, 54.63431, 60.27431, 63.52431, 65.22431, 67.47431, 67.47644)
+
+# Pair the latitudes with an arbitrary longitude (e.g., 10 degrees east)
+# Create a data frame with these coordinates
+coordinates <- data.frame(lon = rep(10, length(latitudes)), lat = latitudes)
+
+# Convert these points to an sf object using WGS 84 (EPSG:4326)
+points_sf <- st_as_sf(coordinates, coords = c("lon", "lat"), crs = 4326)
+
+# Transform these points to EPSG:3035
+points_transformed <- st_transform(points_sf, crs = 3035)
+
+# Extract the y coordinates after transformation
+region_boundaries <- st_coordinates(points_transformed)[,2]
+
+# Print the transformed y coordinates
+print(region_boundaries)
+
+
+
 #Plot the map
 plot <-ggplot() +
   geom_sf(data = world, fill = "lightgrey", color = "white") + # Draw countries
   geom_sf(data = rclim_cord_sf, aes(color = RCLIM), size = 2) + # Draw transect points
+  geom_hline(yintercept = region_boundaries, color = "black", linetype = "dashed") +
   scale_color_manual(values = marked_cold_to_warm_palette) + # Use the custom palette
   theme_minimal() +
   labs(color = "Climate regions") +
   coord_sf(crs = st_crs(3035), xlim = xlims_transformed, ylim = c(1000000, 5100000))
 
-regions
+plot

@@ -1,6 +1,6 @@
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
-setwd("D:/URBAN TRENDS/Urbanisation data") 
+setwd("E:/URBAN TRENDS/Urbanisation data") 
 
 # Libraries required
 library(dplyr)
@@ -20,21 +20,21 @@ built_ubms <- read.csv("ubms_sites_GHS_BUILT.csv", sep = ";", dec = ".")
 
 # Rename columns
 built_ebms <- built_ebms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = geometry,
     latitude = geom1
   )
 
 built_ubms <- built_ubms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = transect_1,
     latitude = transect_2
   )
 
 built_ubms <- built_ubms %>%
-  select(-transect_l)  # Remove the 'transect_l' column
+  dplyr::select(-transect_l)  # Remove the 'transect_l' column
 
 # Convert the dataframe to a spatial dataframe
 coordinates <- st_as_sf(built_ubms, coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
@@ -63,21 +63,21 @@ pop_ubms <- read.csv("ubms_sites_GHS_POP.csv", sep = ";", dec = ".")
 
 # Rename columns
 pop_ebms <- pop_ebms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = geometry,
     latitude = geom1
   )
 
 pop_ubms <- pop_ubms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = transect_1,
     latitude = transect_2
   )
 
 pop_ubms <- pop_ubms %>%
-  select(-transect_l)  # Remove the 'transect_l' column
+  dplyr::select(-transect_l)  # Remove the 'transect_l' column
 
 # Convert the dataframe to a spatial dataframe
 coordinates <- st_as_sf(pop_ubms, coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
@@ -91,34 +91,36 @@ pop_ubms_transformed$longitude <- st_coordinates(coordinates_transformed)[, 1]
 pop_ubms_transformed$latitude <- st_coordinates(coordinates_transformed)[, 2]
 
 pop_ubms_transformed <- pop_ubms_transformed %>%
-  select(-geometry) %>% # Remove the geometry column if it exists
+  dplyr::select(-geometry) %>% # Remove the geometry column if it exists
   mutate(bms_id = "ES_uBMS") %>% # Add the bms_id column with all values set to "ES_uBMS"
   select(bms_id, longitude, latitude, everything()) # Reorder columns
 
 # rbind ebms and ubms files
 pop_df <- rbind(pop_ebms,pop_ubms_transformed)
 
+
+###################################################################################
 # Degree of urbanisation (categorical)
 mod_ebms <- read.csv("embs_ubms_GHS_MOD_stats.csv", sep = ";", dec = ".")
 mod_ubms <- read.csv("ubms_sites_GHS_MOD.csv", sep = ";", dec = ".")
 
 # Rename columns
 mod_ebms <- mod_ebms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = geometry,
     latitude = geom1
   )
 
 mod_ubms <- mod_ubms %>%
-  rename(
+  dplyr::rename(
     transect_id = transect_i,
     longitude = transect_1,
     latitude = transect_2
   )
 
 mod_ubms <- mod_ubms %>%
-  select(-transect_l)  # Remove the 'transect_l' column
+  dplyr::select(-transect_l)  # Remove the 'transect_l' column
 
 # Convert the dataframe to a spatial dataframe
 coordinates <- st_as_sf(mod_ubms, coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
@@ -143,7 +145,7 @@ mod_df <- rbind(mod_ebms,mod_ubms_transformed)
 
 # Define the replacement logic
 replace_values <- function(x) {
-  case_when(
+  dplyr::case_when(
     x == 30 ~ "URBAN CENTRE",
     x == 23 ~ "DENSE URBAN CLUSTER",
     x == 22 ~ "SEMI-DENSE URBAN CLUSTER",
@@ -159,6 +161,7 @@ replace_values <- function(x) {
 # Apply the replacement function to columns 5 to 15
 mod_df <- mod_df %>%
   mutate(across(.cols = 5:15, .fns = replace_values))
+head(mod_df)
 
 #Check NA values
 total_na <- sum(is.na(mod_df))

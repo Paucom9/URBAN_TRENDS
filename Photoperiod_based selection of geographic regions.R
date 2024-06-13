@@ -139,6 +139,8 @@ calculate_day_length <- function(lat, date) {
 }
 
 # Calculate the day length at ymin and ymax
+date <- as.Date("2024-06-23")
+
 day_length_ymin <- calculate_day_length(min_latitude, date)
 day_length_ymax <- 24
 
@@ -248,15 +250,157 @@ rclim_cord_sf_geo <- st_transform(rclim_cord_sf, crs = 4326)
 # Create a vector of latitudes representing the boundaries of the regions in geographic coordinates
 region_boundaries <- c(regions$start_latitude, tail(regions$end_latitude, n = 1))
 
+# Remove the "letter." part from the RCLIM names
+rclim_cord_sf$RCLIM <- sub("^[A-Z]\\. ", "", rclim_cord_sf$RCLIM)
+
+library(dplyr)
+
+# Define the new names
+new_names <- c(
+  "Cold and mesic" = "CR4",
+  "Cool temperate and moist" = "CR7",
+  "Cold and wet" = "CR2",
+  "Cool temperate and dry" = "CR5",
+  "Extremely cold and wet" = "CR1",
+  "Extremely cold and mesic" = "CR3",
+  "Warm temperate and xeric" = "CR9",
+  "Warm temperate and mesic" = "CR8",
+  "Cool temperate and xeric" = "CR6",
+  "Hot and dry" = "CR10"
+)
+
+# Create a new variable with the recoded values
+rclim_cord_sf <- rclim_cord_sf %>%
+  mutate(RCLIM_new = recode(RCLIM, !!!new_names))
+
+rclim_cord_sf$RCLIM_new <- factor(rclim_cord_sf$RCLIM_new, levels = c("CR1", "CR2", "CR3", "CR4", "CR5", "CR6", "CR7", "CR8", "CR9", "CR10"))
+
+
 # Plot the map with rclim_cord_sf in geographic coordinates
-ggplot() +
-  geom_sf(data = europe, fill = "lightgrey", color = "white") +
-  geom_sf(data = rclim_cord_sf_geo, aes(color = RCLIM), size = 1) +
+plot_original <- ggplot() +
+  geom_sf(data = world, fill = "lightgrey", color = "white") +
+  geom_sf(data = rclim_cord_sf, aes(color = RCLIM_new), size = 1) +
   scale_color_manual(values = marked_cold_to_warm_palette) +
   theme_minimal() +
   labs(color = "Climate regions") +
   coord_sf(xlim = c(-20, 35), ylim = c(25, 70), expand = FALSE) +
   geom_hline(yintercept = region_boundaries, color = "black", linetype = "dashed") +
-  ggtitle("Climate regions with latitudinal boudaries. 1.68 day length diff")
+  ggtitle("")+ 
+  theme(
+    text = element_text(family = "Garamond"),
+    plot.title = element_text(family = "Garamond", size = 20, face = "bold"),
+    plot.subtitle = element_text(family = "Garamond", size = 18),
+    axis.title = element_text(family = "Garamond", size = 18, face = "bold"),
+    axis.text = element_text(family = "Garamond", size = 14),
+    legend.title = element_blank(),
+    legend.text = element_text(family = "Garamond", size = 12),
+    legend.position = "bottom",  # Position the legend below the plot
+    legend.direction = "horizontal"  # Arrange the legend items horizontally
+  )
+
+plot(plot_original)
+######
+
+# Filter rclim_cord_sf with unique SITE_ID from final_df
+filtered_rclim_cord_sf <- rclim_cord_sf %>%
+  filter(transect_id %in% unique(final_df$SITE_ID))
+
+urban_type_df <- dplyr::select(final_df, c(2, 37))
+
+filtered_rclim_cord_sf2 <- left_join(filtered_rclim_cord_sf,unique_site_urban_type, by = c("transect_id" = "SITE_ID"))
+
+filtered_rclim_cord_sf2 <- filtered_rclim_cord_sf2 %>%
+  mutate(
+    RCLIM_group = case_when(
+      RCLIM %in% c("Extremely cold and wet", "Cold and wet", "Cold and mesic", "Extremely cold and mesic") ~ "Cold",
+      RCLIM %in% c("Cool temperate and dry", "Cool temperate and moist", "Cool temperate and xeric") ~ "Cool temperate",
+      RCLIM %in% c("Warm temperate and xeric", "Warm temperate and mesic") ~ "Warm temperate",
+      TRUE ~ RCLIM # default case, in case there are unexpected values
+    )
+  )
 
 
+filtered_rclim_cord_sf2 <- na.omit(filtered_rclim_cord_sf2)
+
+# Plot the map with rclim_cord_sf in geographic coordinates
+plot_clim <- ggplot() +
+  geom_sf(data = world, fill = "lightgrey", color = "white") +
+  geom_sf(data = filtered_rclim_cord_sf2, aes(color = as.factor(RCLIM_group)), size = 1) +
+  scale_color_manual(values = c("Cold" = "#5e4fa2", "Cool temperate" = "#abdda4", "Warm temperate" = "#d53e4f")) +
+  theme_minimal() +
+  labs(color = "Climate regions") +
+  scale_y_continuous(breaks = seq(35, 65, by = 10)) +  # Specify y-axis breaks
+  coord_sf(xlim = c(-15, 35), ylim = c(35, 65), expand = FALSE) +
+  theme(
+    text = element_text(family = "Garamond"),
+    plot.title = element_text(family = "Garamond", size = 20, face = "bold"),
+    plot.subtitle = element_text(family = "Garamond", size = 18),
+    axis.title = element_text(family = "Garamond", size = 18, face = "bold"),
+    axis.text = element_text(family = "Garamond", size = 14),
+    legend.title = element_blank(),
+    legend.text = element_text(family = "Garamond", size = 14),
+    legend.position = "bottom",  # Position the legend below the plot
+    legend.direction = "horizontal"  # Arrange the legend items horizontally
+  )
+
+print(plot_clim)
+
+# Plot the map with rclim_cord_sf in geographic coordinates
+plot_sitetype <- ggplot() +
+  geom_sf(data = world, fill = "lightgrey", color = "white") +
+  geom_sf(data = filtered_rclim_cord_sf2, aes(color = as.factor(urban_type)), size = 1) +
+  scale_color_manual(values = c("Rural" = "#3CB371", "Urban" = "#FF6347")) +
+  theme_minimal() +
+  labs(color = "Site type") +
+  scale_y_continuous(breaks = seq(35, 65, by = 10)) +  # Specify y-axis breaks
+  coord_sf(xlim = c(-15, 35), ylim = c(35, 65), expand = FALSE) +
+  theme(
+    text = element_text(family = "Garamond"),
+    plot.title = element_text(family = "Garamond", size = 20, face = "bold"),
+    plot.subtitle = element_text(family = "Garamond", size = 18),
+    axis.title.y = element_blank(),  # Remove y-axis title
+    axis.text.y = element_blank(),   # Remove y-axis text
+    axis.ticks.y = element_blank(),  # Remove y-axis ticks
+    axis.title.x = element_text(family = "Garamond", size = 18, face = "bold"),
+    axis.text.x = element_text(family = "Garamond", size = 14),
+    legend.title = element_blank(),
+    legend.text = element_text(family = "Garamond", size = 14),
+    legend.position = "bottom",  # Position the legend below the plot
+    legend.direction = "horizontal"  # Arrange the legend items horizontally
+  )
+
+print(plot_sitetype)
+
+
+print(plot_sitetype)
+
+library(patchwork)
+
+library(ggplot2)
+library(patchwork)
+
+# Assuming plot_original, plot_clim, and plot_sitetype are your three plots
+
+# Ensure all plots have the same size and dimensions
+plot_original <- plot_original + theme(plot.margin = margin(0, 0, 0, 0)) +labs(tag = "(a)")
+plot_clim <- plot_clim + theme(plot.margin = margin(0, 0, 0, 0)) +labs(tag = "(b)")
+plot_sitetype <- plot_sitetype + theme(plot.margin = margin(0, 0, 0, 0)) +labs(tag = "(c)")
+
+# Combine the plots using patchwork
+
+figure_maps <- plot_original + plot_clim + plot_sitetype +  theme(plot.margin = margin(t = 0.5, r = 0.5, b = 0.5, l = 0.5))
+
+
+# Print the combined plot
+print(figure_maps)
+
+# Set the working directory
+setwd("E:/URBAN TRENDS/Resultats/Figures")
+
+# Save the plot in the working directory
+ggsave("Figure_map.png", plot = figure_maps, width = 15, height = 7, dpi = 600, bg = "white")
+
+  
+  
+
+  
