@@ -110,7 +110,7 @@ sindex_yrs <- sindex_yrs %>%
 
 # ----
 
-# --- Loop to calculate for each species*site the associated urbanisation trend --- #
+# --- Loop to calculate for each species*site the associated urbanization trend --- #
 # ----
 
 # Initialize an empty data frame to store the summary information for all variables
@@ -365,7 +365,6 @@ for(i in 1:nrow(sindex_yrs)) {
 }
 
 # Now, points vector contains the point values for each row in sindex_yrs based on STR_YEAR
-# You can add this as a new column to sindex_yrs if needed
 sindex_yrs$point <- points
 head(sindex_yrs)
 
