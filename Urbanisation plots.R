@@ -100,7 +100,7 @@ pop_df <- rbind(pop_ebms,pop_ubms_transformed)
 
 
 ###################################################################################
-# Degree of urbanisation (categorical)
+# Degree of urbanization (categorical)
 mod_ebms <- read.csv("embs_ubms_GHS_MOD_stats.csv", sep = ";", dec = ".")
 mod_ubms <- read.csv("ubms_sites_GHS_MOD.csv", sep = ";", dec = ".")
 
