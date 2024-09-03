@@ -125,14 +125,13 @@ urb_trends_all_df <- data.frame(SPECIES = character(),
 unique_variables <- unique(built_long$variable)
 
 # Loop over each unique variable
-for(variable in unique_variables) {
+for(current_variable  in unique_variables) {
   
   # Filter by a specific variable
   built_dt <- built_long %>%
-    filter(variable == variable) %>%
+    filter(variable == current_variable ) %>%
     na.omit() %>%
-    mutate(value_scaled = scale(value))  # Standardizing the 'value' variable
-  
+
   # Loop over each species*site combination
   for(i in 1:nrow(sindex_yrs)) {
     subset_data <- built_dt %>%
@@ -166,7 +165,7 @@ for(variable in unique_variables) {
       # Append to the summary data frame
       urb_trends_all_df <- rbind(urb_trends_all_df, data.frame(SPECIES = sindex_yrs$SPECIES[i],
                                                                SITE_ID = sindex_yrs$SITE_ID[i],
-                                                               urb_variable = variable,
+                                                               urb_variable = current_variable,
                                                                Best_Model = best_model_name,
                                                                urb_trend = slope,
                                                                stringsAsFactors = FALSE))
@@ -178,7 +177,7 @@ for(variable in unique_variables) {
 head(urb_trends_all_df)
 hist(urb_trends_all_df$urb_trend)
 
-write.csv(urb_trends_all_df, "D:/URBAN TRENDS/Urbanisation data/urb_trends.csv", row.names = FALSE)
+write.csv(urb_trends_all_df, "E:/URBAN TRENDS/Urbanisation data/urb_trends_rev.csv", row.names = FALSE)
 
 
 #  --- Interpolate year data of built-up fraction using exponential models  --- #
