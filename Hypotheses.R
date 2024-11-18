@@ -60,6 +60,10 @@ library(DHARMa)
 library(effects)
 library(dplyr)
 
+<<<<<<< HEAD
+=======
+final_df <- read.csv("final_df.csv")
+>>>>>>> b05b413c93476f82c87e62acfdd863897e16f917
 
 # Variables preparation
 final_df$inverse_variance_weights <- 1/(final_df$std_error^2) # Inverse of the variance (the higher value the higher precision of the estimate)
