@@ -2,8 +2,8 @@
 
 # Clean environment and set the working directory to the location of the data files
 rm(list = ls())  # Remove all objects from the current R session to ensure a clean working environment
-setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
-setwd("/Users/SUITCASE/Documents/URBAN_TRENDS")
+setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  # Pau working directory
+setwd("/Users/SUITCASE/Documents/URBAN_TRENDS") # Yolanda working directory
 
 # Load required libraries
 library(data.table)  # For efficient data handling
@@ -20,7 +20,7 @@ library(sf)          # For managing spatial data
 library(doParallel)  # For increasing loop performance
 
 
-# >>> Run functions in FUNCTIONS.R  <<< #
+# >>> Run functions needed in FUNCTIONS.R  <<< #
 
 
 # Data Import and Preparation
@@ -133,11 +133,22 @@ m_count$RCLIM <- replace(m_count$RCLIM, is.na(m_count$RCLIM), "K. Warm temperate
 
 # --- Establishing photoperiod-based geographic region --- #
 
+library(suncalc)
+library(growR)
+calculate_day_length <- function(lat, date) {
+  sun_times <- getSunlightTimes(date, lat, 0)  # Longitude 0, adjust as needed
+  if (is.na(sun_times$sunset) || is.na(sun_times$sunrise)) {
+    # Handle the NA values, perhaps by setting to 0 or 24 depending on the context
+    return(NA)  # or an appropriate value for your use case
+  }
+  day_length <- as.numeric(difftime(sun_times$sunset, sun_times$sunrise, units = "hours"))
+  return(day_length)
+} #Function to calculate day length based on latitude and date
+
 # Calculate the day length at ymin and ymax
 min_latitude <- 28.07431
 max_latitude <- 67.47644
 date <- as.Date("2024-06-20") # summer solstice in 2024
-#library(growR) #added by YM, calculate_day_length not working in my lapop
 day_length_ymin <- calculate_day_length(min_latitude, date) 
 day_length_ymax <- 24
 
@@ -202,13 +213,19 @@ m_coord_clean$transect_lat_geo <- lat_lon[, 2] # Latitude
 m_coord_clean$transect_lon_geo <- lat_lon[, 1] # Longitude
 
 #Assigning geo_region to m_coord based on latitude range
+
+find_region <- function(lat) {
+  region <- regions$name_region[lat >= regions$start_latitude & lat <= regions$end_latitude]
+  if (length(region) == 0) return(NA)
+  return(region)
+} # Function to find the corresponding latitudinal geographic region based on transect latitude
+
 # Apply the function to each row in m_coord to create the geo_region column
 m_coord_clean$geo_region <- sapply(m_coord_clean$transect_lat_geo, find_region)
 
 m_coord_clean <- merge(m_coord_clean, m_clim[, c("SITE_ID", "RCLIM")], by.x = "transect_id", by.y = "SITE_ID", all.x = TRUE)
 
 m_coord_clean<- data.table(m_coord_clean)
-
 
 # Joining m_count with m_coord_clean to include geo_region based on bms_id and the corresponding site/transect ID
 m_count <- m_count %>%
@@ -222,22 +239,94 @@ m_visit <- m_visit %>%
 
 
 
-
-
-
-
-
 # --- Flight curves and SINDEX calculation --- #
 
-# Ask to store the console output in a txt. 
-sink("outputfile.txt")
+calculate_monitoring_season <- function(data) {
+  # Ensure necessary columns are present
+  if (!"week" %in% names(data)) {
+    stop("The data must contain a 'week' column.")
+  }
+  
+  # Calculate monitoring season per bms_id
+  if ("bms_id" %in% names(data)) {
+    season_by_bms_id <- data %>%
+      group_by(bms_id, week) %>%
+      summarise(total_visit = n(), .groups = 'drop') %>%
+      group_by(bms_id) %>%
+      mutate(cumulative_visit = cumsum(total_visit)) %>%
+      transmute(
+        week,
+        bms_id,
+        cumulative_visit,
+        total_year_visit = max(cumulative_visit),
+        p5_week = total_year_visit * 0.05,
+        p95_week = total_year_visit * 0.95
+      ) %>%
+      group_by(bms_id) %>%
+      summarise(
+        week_5th_percentile = week[min(which(cumulative_visit >= p5_week))],
+        week_95th_percentile = week[min(which(cumulative_visit >= p95_week))],
+        .groups = 'drop'
+      ) %>%
+      mutate(
+        month_start = ceiling(week_5th_percentile / 4.348),
+        month_end = ceiling(week_95th_percentile / 4.348)
+      ) %>%
+      mutate(
+        month_start = ifelse(month_start > 12, 12, month_start),
+        month_end = ifelse(month_end > 12, 12, month_end)
+      )
+    
+    # Step 2: Assess variability across bms_id
+    start_month_range <- range(season_by_bms_id$month_start)
+    end_month_range <- range(season_by_bms_id$month_end)
+    
+    if (n_distinct(season_by_bms_id$month_start) > 1 || n_distinct(season_by_bms_id$month_end) > 1) {
+      warning(paste("Start and/or end months vary across bms_ids.",
+                    "Start month range:", paste(start_month_range, collapse = " to "),
+                    "End month range:", paste(end_month_range, collapse = " to ")))
+    }
+  }
+  
+  # Calculate monitoring season for the entire dataset
+  overall_season <- data %>%
+    group_by(week) %>%
+    summarise(total_visit = n(), .groups = 'drop') %>%
+    mutate(cumulative_visit = cumsum(total_visit)) %>%
+    transmute(
+      week,
+      cumulative_visit,
+      total_year_visit = max(cumulative_visit),
+      p5_week = total_year_visit * 0.05,
+      p95_week = total_year_visit * 0.95
+    ) %>%
+    summarise(
+      week_5th_percentile = week[min(which(cumulative_visit >= p5_week))],
+      week_95th_percentile = week[min(which(cumulative_visit >= p95_week))]
+    ) %>%
+    mutate(
+      month_start = ceiling(week_5th_percentile / 4.348),
+      month_end = ceiling(week_95th_percentile / 4.348)
+    ) %>%
+    mutate(
+      month_start = ifelse(month_start > 12, 12, month_start),
+      month_end = ifelse(month_end > 12, 12, month_end)
+    ) %>%
+    summarise(
+      month_start = unique(month_start),
+      month_end = unique(month_end)
+    )
+  
+  # Return a tibble with month_start and month_end for the overall data
+  return(overall_season)
+} # Function to calculate start and end months for monitoring season of each BMS project based on visit data  #
 
 # Register the parallel backend to improve performance
 registerDoParallel(cores = detectCores())
 
 # Define the base path where you want to save the files
-base_path <- "D:/URBAN TRENDS/sindex_results"
-base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results"
+base_path <- "E:/URBAN TRENDS/sindex_results" # Pau
+base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results" # Yolanda
 
 
 # Iterate over each unique geographic region in the monitoring count data
@@ -375,14 +464,12 @@ for(region in unique(na.omit(m_count$geo_region))){
   # Stop the parallel backend when done
   stopImplicitCluster()
   
-  # save console message
-  sink()
   
   # --- Compile sindex data --- #
   
   # Set the base path
-  base_path <- "D:/URBAN TRENDS/sindex_results"
-  base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results"
+  base_path <- "E:/URBAN TRENDS/sindex_results" # Pau
+  base_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results" # Yolanda
   
   # List all CSV files in the directory
   files <- list.files(base_path, pattern = "\\.csv$", full.names = TRUE)
@@ -405,8 +492,8 @@ for(region in unique(na.omit(m_count$geo_region))){
   print(sindex_data)
   
   # Define the filename and path for the combined data
-  output_file_path <- "D:/URBAN TRENDS/sindex_results/sindex_results.csv"
-  output_file_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results/sindex_results.csv"
+  output_file_path <- "E:/URBAN TRENDS/sindex_results/sindex_results.csv" # Pau
+  output_file_path <- "/Users/SUITCASE/Documents/URBAN_TRENDS/sindex_results/sindex_results.csv" # Yolanda
   
   # Save the combined data table to the specified file
   fwrite(sindex_data, output_file_path)
