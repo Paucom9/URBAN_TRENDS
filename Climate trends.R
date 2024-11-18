@@ -1,21 +1,32 @@
+###### Climate trends calculation ######
 
+# Required libraries
+library(dplyr)
+library(broom)
+library(data.table)
+library(tidyr)
+library(mgcv)
+library(progress)
 
-setwd("D:/URBAN TRENDS/Climate data") 
+# Remove all objects from the current R session to ensure a clean working environment
+rm(list = ls())  
+
+setwd("E:/URBAN TRENDS/Climate data") 
 
 # Data
 
-clim_a <- read.csv("climate_a.csv", sep = ",", dec = ".")
+clim_a <- read.csv("climate_a.csv", sep = ",", dec = ".") # Climate data extracted using ClimateDT tool (https://www.ibbr.cnr.it//climate-dt/)
 clim_b <- read.csv("climate_b.csv", sep = ",", dec = ".")
 clim_c <- read.csv("climate_c.csv", sep = ",", dec = ".")
 
 clim_df <- rbind(clim_a, clim_b, clim_c)
-
+head(clim_df)
 
 # # --- Identify the temporal series of each species-site combination of sindex_results --- #
 
-setwd("D:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("E:/URBAN TRENDS/sindex_results") 
 
-sindex_df <-read.csv("sindex_results.csv", sep=",", dec=".")
+sindex_df <-read.csv("sindex_results.csv", sep=",", dec=".") # Obtained from running "flight_curves_sindex.R"
 
 # Transform variables
 sindex_df$SPECIES <- factor(sindex_df$SPECIES)
@@ -32,13 +43,13 @@ sindex_yrs <- sindex_df %>%
     .groups = "drop"  # Remove the grouping structure
   ) %>%
   mutate(
-    Sp_YEARS = S_YEARS / N_YEARS  # Calculate the proportion of S_YEARS
+    Sp_YEARS = S_YEARS / N_YEARS  
   )
 
-# Filter by a minum number of years and year with positive values of sindex
+# Filter by a minimum number of years and year with positive values of sindex
 
 sindex_yrs <- sindex_yrs %>%
-  filter(N_YEARS >= 8, Sp_YEARS >= 0.5)
+  filter(N_YEARS >= 10, Sp_YEARS >= 0.5)
 
 # --- Calculate climate trends between STR_YEAR AND END_YEAR for each SPECIES-SITE temporal series --- #
 
@@ -57,7 +68,15 @@ results_df <- data.frame(
 )
 
 # Specified climatic variables
-clim_vars <- c("bio1", "bio4", "bio12", "bio15", "PSMAO", "GDD5", "DMA")
+clim_vars <- c("bio1", "bio4", "bio9", "bio10", "bio12", "bio15", "bio17", "bio18", "PSMAO", "GDD5", "DMA")
+
+# Initialize progress bar
+pb <- progress_bar$new(
+  format = "  Processing [:bar] :percent in :elapsed ETA: :eta",
+  total = nrow(sindex_yrs), 
+  clear = FALSE, 
+  width = 60
+)
 
 # Loop through each row in sindex_yrs
 for (i in 1:nrow(sindex_yrs)) {
@@ -90,14 +109,21 @@ for (i in 1:nrow(sindex_yrs)) {
       ))
     }
   }
+  
+  # Update progress bar
+  pb$tick()
 }
+
+# Close the progress bar (optional)
+pb$terminate()
+
 
 # View the structure of the results data frame
 str(results_df)
 head(results_df)
 
 
-output_file_path <- "D:/URBAN TRENDS/Climate data/climate_trends.csv"
+output_file_path <- "E:/URBAN TRENDS/Climate data/climate_trends.csv"
 
 # Save the combined data table to the specified file
 fwrite(results_df, output_file_path)
