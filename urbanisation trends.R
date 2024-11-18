@@ -1,3 +1,5 @@
+###### Urbanization trends calculation ######
+
 # Remove all objects from the current R session to ensure a clean working environment
 rm(list = ls())  
 
@@ -7,6 +9,7 @@ library(broom)
 library(data.table)
 library(tidyr)
 library(mgcv)
+library(progress)
 
 # --- Read and manage built data --- #
 
@@ -81,9 +84,9 @@ built_dt$value_scaled <- scale(built_dt$value)
 
 # ----
 
-setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("E:/URBAN TRENDS/sindex_results")  
 
-sindex_df <-read.csv("sindex_results.csv", sep=",", dec=".")
+sindex_df <-read.csv("sindex_results.csv", sep=",", dec=".") # Obtained from running "flight_curves_sindex.R"
 
 # Transform variables
 sindex_df$SPECIES <- factor(sindex_df$SPECIES)
@@ -97,13 +100,13 @@ sindex_yrs <- sindex_df %>%
     END_YEAR = max(M_YEAR),
     N_YEARS = n_distinct(M_YEAR),
     S_YEARS = n_distinct(M_YEAR[SINDEX > 0]),  # Count unique years with SINDEX > 0
-    .groups = "drop"  # Remove the grouping structure
+    .groups = "drop" 
   ) %>%
   mutate(
-    Sp_YEARS = S_YEARS / N_YEARS  # Calculate the proportion of S_YEARS
+    Sp_YEARS = S_YEARS / N_YEARS  # Calculate the proportion of years with SINDEX > 0
   )
 
-# Filter by a minum number of years and year with positive values of sindex
+# Filter by a minimum number of years and years with positive values of sindex
 
 sindex_yrs <- sindex_yrs %>%
   filter(N_YEARS >= 10, Sp_YEARS >= 0.5)
@@ -124,22 +127,40 @@ urb_trends_all_df <- data.frame(SPECIES = character(),
 # Unique variables in built_long
 unique_variables <- unique(built_long$variable)
 
+# Calculate total iterations
+total_iterations <- length(unique_variables) * nrow(sindex_yrs)
+
+# Initialize a progress bar
+pb <- progress_bar$new(
+  format = "  Total Progress [:bar] :percent in :elapsed ETA: :eta",
+  total = total_iterations, 
+  clear = FALSE, 
+  width = 60
+)
+
 # Loop over each unique variable
-for(current_variable  in unique_variables) {
+for (current_variable in unique_variables) {
+  
+  # Print the current variable being processed
+  print(paste0("Processing variable: ", current_variable))
   
   # Filter by a specific variable
   built_dt <- built_long %>%
-    filter(variable == current_variable ) %>%
-    na.omit() %>%
-
+    filter(variable == current_variable) %>%
+    na.omit()
+  
   # Loop over each species*site combination
-  for(i in 1:nrow(sindex_yrs)) {
+  for (i in 1:nrow(sindex_yrs)) {
+    
+    # Update progress bar
+    pb$tick()
+    
     subset_data <- built_dt %>%
       mutate(transect_id = as.character(transect_id)) %>%
       filter(transect_id == as.character(sindex_yrs$SITE_ID[i]))
     
     # Check if there's enough data to fit the model
-    if(nrow(subset_data) > 1) {
+    if (nrow(subset_data) > 1) {
       # Fit the four models
       linear_model <- lm(value ~ year, data = subset_data)
       polynomial_model <- lm(value ~ poly(year, 2), data = subset_data)
@@ -173,27 +194,33 @@ for(current_variable  in unique_variables) {
   }
 }
 
+
 # Check the first few rows of the summary
 head(urb_trends_all_df)
 hist(urb_trends_all_df$urb_trend)
 
-write.csv(urb_trends_all_df, "E:/URBAN TRENDS/Urbanisation data/urb_trends_rev.csv", row.names = FALSE)
+write.csv(urb_trends_all_df, "E:/URBAN TRENDS/Urbanisation data/urb_trends.csv", row.names = FALSE)
 
 
-#  --- Interpolate year data of built-up fraction using exponential models  --- #
-# ----
+#  --- Interpolate year data of built-up fraction   --- #
 
-# --- Predict year data using GAMs ---#
 # ----
 head(built_dt)
 
 # Assuming built_dt is your dataset
 
 # Convert year to numeric
+setDT(built_dt)
 built_dt[, year := as.numeric(year)]
+
+# Create unique combinations of transect_id and variable
+unique_combinations <- unique(built_dt[, .(transect_id, variable)])
 
 # Create an empty list to store predictions
 predictions_list <- list()
+
+# Initialize progress bar
+pb <- txtProgressBar(min = 0, max = nrow(unique_combinations), style = 3)
 
 # Iterate over unique combinations of transect_id and variable
 for (i in 1:nrow(unique_combinations)) {
@@ -243,7 +270,6 @@ close(pb)
 # Combine predictions from the list into a single data table
 predictions <- rbindlist(predictions_list, fill = TRUE)
 
-
 # View the predictions
 head(predictions)
 
@@ -257,8 +283,9 @@ urban_year_data <- predictions %>%
 # Rename the columns to match the desired format
 colnames(urban_year_data) <- c("SITE_ID","year","built_100", "built_500", "built_1000", "built_2000")
 
-write.csv(urban_year_data, "D:/URBAN TRENDS/Urbanisation data/urban_year_data.csv", row.names = FALSE)
-
+head(urban_year_data)
+     
+write.csv(urban_year_data, "E:/URBAN TRENDS/Urbanisation data/urban_year_data.csv", row.names = FALSE)
 
 
 # ----
@@ -384,7 +411,7 @@ mod_str_yr <- sindex_yrs %>%
   dplyr::ungroup()
 
 
-write.csv(mod_str_yr, "D:/URBAN TRENDS/Urbanisation data/mod_str_yr.csv", row.names = FALSE)
+write.csv(mod_str_yr, "E:/URBAN TRENDS/Urbanisation data/mod_str_yr.csv", row.names = FALSE)
 
 # ----
 
