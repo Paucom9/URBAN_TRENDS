@@ -1,6 +1,8 @@
+###### Calculation of butterfly population trends ######
+
 ## Clean enviroment and set directory to files
 rm(list=ls())
-setwd("E:/URBAN TRENDS/BMS data/BMS DATA 2024")  
+setwd("E:/URBAN TRENDS/sindex_results/")  
 
 #Libraries required
 library(dplyr) # For data manipulation tasks like filtering, grouping, and summarizing
@@ -9,21 +11,21 @@ library(broom) # To convert statistical analysis objects from R into tidy format
 library(readr) # For reading CSV files into R with read.csv
 
 # Data
-sindex <- read.csv("sindex_results.csv", sep=",", dec=".")
+sindex <- read.csv("sindex_results.csv", sep=",", dec=".") # Obtained from running "flight_curves_sindex.R"
 head(sindex)
 
 #Filtering temporal series with a minimum of years and positive values
 
 sindex_filt <- sindex %>%
   group_by(SPECIES, SITE_ID, RCLIM) %>%
-  # First, make sure that there are at least 10 different years of data
+  # Make sure that there are at least 10 different years of data
   filter(n_distinct(M_YEAR) >= 10) %>%
-  # Then, for each group, calculate the percentage of years with SINDEX < 1
-  mutate(porcentaje_bajo_1 = sum(SINDEX < 1, na.rm = TRUE) / n()) %>%
+  # For each group, calculate the percentage of years with SINDEX < 1
+  mutate(low_percentage_1 = sum(SINDEX < 1, na.rm = TRUE) / n()) %>%
   # Filter to keep only those groups where less than half of the years have SINDEX < 1
-  filter(porcentaje_bajo_1 <= 0.5) %>%
+  filter(low_percentage_1 <= 0.5) %>%
   # Remove the auxiliary column used for the calculation
-  select(-porcentaje_bajo_1) %>%
+  select(-low_percentage_1) %>%
   ungroup()
 
 head(sindex_filt)
@@ -131,7 +133,7 @@ print(estimate_summary)
 hist(estimate_summary$estimate)
 
 # Save results
-file_path <- "D:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends10.csv"
+file_path <- "E:/URBAN TRENDS/BMS data/BMS DATA 2024/butterfly_population_trends.csv"
 write_csv(estimate_summary, file_path)
 
 
