@@ -60,10 +60,6 @@ library(DHARMa)
 library(effects)
 library(dplyr)
 
-<<<<<<< HEAD
-=======
-final_df <- read.csv("final_df.csv")
->>>>>>> e3c9a326bc7637da00c9994c433da31e52a8aa15
 
 # Variables preparation
 final_df$inverse_variance_weights <- 1/(final_df$std_error^2) # Inverse of the variance (the higher value the higher precision of the estimate)
@@ -78,6 +74,7 @@ final_df$bio12 <- as.numeric(final_df$bio12)
 final_df$bio15 <- as.numeric(final_df$bio15)
 final_df$GDD5 <- as.numeric(final_df$GDD5)
 final_df$DMA <- as.numeric(final_df$DMA)
+final_df$DMA_inverted <- -final_df$DMA
 final_df$SPECIES <- as.factor(final_df$SPECIES)
 final_df$SITE_ID <- as.factor(final_df$SITE_ID)
 final_df$Country.Name <- as.factor(final_df$Country.Name)
