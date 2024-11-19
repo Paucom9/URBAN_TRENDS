@@ -20,9 +20,6 @@ library(sf)          # For managing spatial data
 library(doParallel)  # For increasing loop performance
 
 
-# >>> Run functions needed in FUNCTIONS.R  <<< #
-
-
 # Data Import and Preparation
 
 # eBMS data
